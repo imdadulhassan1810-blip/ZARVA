@@ -237,6 +237,13 @@ export class ApiClient {
     return this.request<Order[]>("/api/orders");
   }
 
+  /** Cancels a user's own order/booking. Blocked once completed/cancelled, or once a
+   *  trackable trip has actually started (see ordersRouter.post("/:id/cancel")). Refunds
+   *  automatically via Razorpay if the order was actually paid for online. */
+  async cancelOrder(orderId: string) {
+    return this.request<Order>(`/api/orders/${orderId}/cancel`, { method: "POST" });
+  }
+
   // --- Dynamic cab pricing ---
   /** Real distance/time/surge-based fare for a specific vehicle + pickup/drop. Recomputed server-side at booking time too — never trust this for anything but display. */
   async quoteCabFare(input: { listingId: string; pickup: GeoPoint; drop: GeoPoint }) {

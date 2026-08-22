@@ -6,8 +6,11 @@
     "scheme": "oneapp",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
     "splash": {
-      "backgroundColor": "#2a5cf5"
+      "image": "./assets/splash.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#5B3DF6"
     },
     "ios": {
       "supportsTablet": true,
@@ -16,16 +19,21 @@
     "android": {
       "package": "com.oneapp.mobile",
       "adaptiveIcon": {
-        "backgroundColor": "#2a5cf5"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#5B3DF6"
       }
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
     },
     "notification": {
-      "color": "#2a5cf5"
+      "color": "#5B3DF6"
     },
-    "plugins": ["expo-notifications"],
+    "plugins": [
+      "expo-notifications",
+      "expo-font"
+    ],
     "extra": {
       "apiUrl": "http://localhost:4000"
     }

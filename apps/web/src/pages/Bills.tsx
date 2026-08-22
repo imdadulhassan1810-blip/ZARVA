@@ -34,7 +34,7 @@ export function Bills() {
         <p className="text-slate-500 text-sm">Electricity, water, mobile, DTH, broadband & credit card.</p>
       </div>
 
-      <form onSubmit={onLookup} className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+      <form onSubmit={onLookup} className="bg-surface border border-slate-200 rounded-xl p-4 space-y-3">
         <div>
           <label className="block text-sm font-medium mb-1">Biller</label>
           <select
@@ -75,7 +75,7 @@ export function Bills() {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {bill && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+        <div className="bg-surface border border-slate-200 rounded-xl p-4 space-y-3">
           <div className="flex justify-between text-sm">
             <span className="text-slate-500">Biller</span>
             <span className="font-medium">{bill.billerName}</span>
@@ -94,7 +94,7 @@ export function Bills() {
           </div>
 
           {paid ? (
-            <p className="text-center text-green-700 font-medium">✅ Payment successful!</p>
+            <p className="text-center text-green-700 dark:text-green-400 font-medium">✅ Payment successful!</p>
           ) : (
             <PaymentActions
               label={`Pay ₹${bill.amountDue.toLocaleString("en-IN")}`}

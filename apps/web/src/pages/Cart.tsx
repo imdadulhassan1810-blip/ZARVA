@@ -35,7 +35,7 @@ export function Cart() {
         {items.map((item) => (
           <div
             key={item.id}
-            className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-4"
+            className="bg-surface border border-slate-200 rounded-xl p-4 flex items-center gap-4"
           >
             <div className="text-3xl">{item.listing.imageEmoji}</div>
             <div className="flex-1">
@@ -70,7 +70,7 @@ export function Cart() {
         ))}
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between">
+      <div className="bg-surface border border-slate-200 rounded-xl p-4 flex items-center justify-between">
         <span className="text-slate-600">Total</span>
         <span className="text-xl font-bold">₹{total.toLocaleString("en-IN")}</span>
       </div>

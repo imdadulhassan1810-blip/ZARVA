@@ -82,7 +82,7 @@ export function Category() {
 
       <form
         onSubmit={onSubmit}
-        className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-4"
+        className="bg-surface border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-4"
       >
         {category.group === "booking" ? (
           <>
@@ -137,7 +137,11 @@ export function Category() {
         </button>
       </form>
 
-      {liveNote && <p className="text-amber-700 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{liveNote}</p>}
+      {liveNote && (
+        <p className="text-amber-700 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg px-3 py-2">
+          {liveNote}
+        </p>
+      )}
 
       {loading ? (
         <p className="text-slate-500">Loading…</p>

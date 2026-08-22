@@ -53,11 +53,11 @@ export function RootNavigator() {
         screenOptions={({ navigation }) => ({
           headerStyle: { backgroundColor: colors.brand },
           headerTintColor: "#fff",
-          headerTitleStyle: { fontWeight: "700" as const },
+          headerTitleStyle: { fontFamily: "PlusJakartaSans_700Bold", fontWeight: "700" as const },
           headerRight: () => <HeaderRight navigation={navigation} />,
         })}
       >
-        <Stack.Screen name="Home" component={HomeScreen} options={{ title: "🧩 OneApp" }} />
+        <Stack.Screen name="Home" component={HomeScreen} options={{ title: "OneApp" }} />
         <Stack.Screen name="Login" component={LoginScreen} options={{ title: "Log in", headerRight: undefined }} />
         <Stack.Screen name="Register" component={RegisterScreen} options={{ title: "Create account", headerRight: undefined }} />
         <Stack.Screen name="Category" component={CategoryScreen} options={{ title: "Category" }} />

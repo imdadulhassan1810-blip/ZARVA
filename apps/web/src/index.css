@@ -1,7 +1,90 @@
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/plus-jakarta-sans";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens. Light values live on :root; dark values override the same custom
+ * properties under .dark. Tailwind's `slate` and `surface` colors (see tailwind.config.js)
+ * both resolve through these variables, so nearly every existing bg-slate-*/text-slate-*/
+ * border-slate-*/bg-surface utility in the app already flips correctly in dark mode —
+ * true white (bg-white/text-white, used for button labels on colored buttons) is left
+ * untouched on purpose and never flips.
+ */
+:root {
+  color-scheme: light;
+  --surface: 255 255 255;
+  --surface-raised: 255 255 255;
+
+  --slate-50: 248 250 252;
+  --slate-100: 241 245 249;
+  --slate-200: 226 232 240;
+  --slate-300: 203 213 225;
+  --slate-400: 148 163 184;
+  --slate-500: 100 116 139;
+  --slate-600: 71 85 105;
+  --slate-700: 51 65 85;
+  --slate-800: 30 41 59;
+  --slate-900: 15 23 42;
+}
+
+.dark {
+  color-scheme: dark;
+  --surface: 19 23 34;
+  --surface-raised: 26 31 45;
+
+  /* The ramp is inverted, not just darkened — slate-900 (headings) becomes the lightest
+     stop and slate-50 (page background) becomes the darkest, preserving the same relative
+     contrast/hierarchy the light theme has. */
+  --slate-50: 10 13 20;
+  --slate-100: 15 19 29;
+  --slate-200: 32 39 54;
+  --slate-300: 42 50 68;
+  --slate-400: 100 110 130;
+  --slate-500: 141 151 171;
+  --slate-600: 163 172 189;
+  --slate-700: 193 200 214;
+  --slate-800: 221 225 234;
+  --slate-900: 242 244 248;
+}
+
 body {
-  @apply bg-slate-50 text-slate-900;
+  /* Plain CSS, not @apply — with any opacity-modifier utility in use anywhere in the app
+     (e.g. bg-white/15), Tailwind's @apply triggers a full-utility scan that chokes on the
+     rgb(var(...) / <alpha-value>) syntax these CSS-variable-backed colors use (see
+     tailwind.config.js) — a known Tailwind v3 + custom-CSS-var-color incompatibility. */
+  background-color: rgb(var(--slate-50));
+  color: rgb(var(--slate-900));
+  font-family: "InterVariable", "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+.font-display {
+  font-family: "Plus Jakarta Sans Variable", "Plus Jakarta Sans", system-ui, sans-serif;
+}
+
+/* None of the app's <input>/<select>/<textarea> set an explicit background/text color
+   (only border-*), so they relied on the browser's native default — invisible in dark
+   mode without this. `color-scheme` above handles autofill/native-widget chrome; this
+   covers the actual field surface every page already gives a border to. */
+input,
+select,
+textarea {
+  background-color: rgb(var(--surface));
+  color: rgb(var(--slate-900));
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #6d54fb; /* brand-500 */
+  box-shadow: 0 0 0 3px rgba(109, 84, 251, 0.18);
 }

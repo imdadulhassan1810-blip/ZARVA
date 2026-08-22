@@ -58,7 +58,7 @@ export function RazorpayCheckoutModal({
         name: ${JSON.stringify(name)},
         description: ${JSON.stringify(description ?? "")},
         prefill: ${JSON.stringify(prefill ?? {})},
-        theme: { color: "#2a5cf5" },
+        theme: { color: "#5b3df6" },
         ${method ? `method: ${JSON.stringify(method)},` : ""}
         handler: function (response) { post({ type: "success", ...response }); },
         modal: { ondismiss: function () { post({ type: "dismiss" }); } }

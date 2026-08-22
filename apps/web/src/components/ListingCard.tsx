@@ -5,7 +5,7 @@ export function ListingCard({ listing, date }: { listing: Listing; date?: string
   return (
     <Link
       to={date ? `/listing/${listing.id}?date=${encodeURIComponent(date)}` : `/listing/${listing.id}`}
-      className="bg-white rounded-xl border border-slate-200 p-4 flex gap-4 hover:shadow-md hover:border-brand-300 transition"
+      className="bg-surface rounded-xl border border-slate-200 p-4 flex gap-4 hover:shadow-md hover:border-brand-300 transition"
     >
       {listing.imageUrl ? (
         <img
@@ -19,11 +19,11 @@ export function ListingCard({ listing, date }: { listing: Listing; date?: string
       )}
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
-          <div>
+          <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-slate-900 flex items-center gap-1.5">
               {listing.title}
               {listing.source && (
-                <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-100 rounded-full px-1.5 py-0.5">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/50 rounded-full px-1.5 py-0.5">
                   Live
                 </span>
               )}

@@ -93,7 +93,7 @@ export function ListingDetail() {
 
   if (confirmed) {
     return (
-      <div className="max-w-md mx-auto bg-white border border-slate-200 rounded-xl p-8 text-center mt-8">
+      <div className="max-w-md mx-auto bg-surface border border-slate-200 rounded-xl p-8 text-center mt-8">
         <div className="text-4xl mb-3">✅</div>
         <h1 className="text-xl font-bold mb-1">Booking confirmed!</h1>
         <p className="text-slate-500 text-sm mb-4">
@@ -120,27 +120,30 @@ export function ListingDetail() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto bg-white border border-slate-200 rounded-xl p-6 space-y-5">
-      <div className="flex items-start gap-4">
+    <div className="max-w-2xl mx-auto bg-surface border border-slate-200 rounded-xl p-4 sm:p-6 space-y-5">
+      {/* flex-wrap + a min-width on the title column: at phone widths there isn't room
+          for image + title + price on one line, so the price wraps to its own row below
+          instead of squeezing the title into an unreadable multi-line stack. */}
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
         {listing.imageUrl ? (
-          <img src={listing.imageUrl} alt="" className="w-16 h-16 rounded-lg object-cover bg-slate-100" />
+          <img src={listing.imageUrl} alt="" className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg object-cover bg-slate-100 shrink-0" />
         ) : (
-          <div className="text-5xl">{listing.imageEmoji}</div>
+          <div className="text-4xl sm:text-5xl shrink-0">{listing.imageEmoji}</div>
         )}
-        <div className="flex-1">
+        <div className="flex-1 min-w-[160px]">
           <h1 className="text-xl font-bold">{listing.title}</h1>
           {listing.subtitle && <p className="text-slate-500">{listing.subtitle}</p>}
           <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
             {listing.location && <span>📍 {listing.location}</span>}
             {listing.rating != null && <span>⭐ {listing.rating.toFixed(1)}</span>}
             {Boolean(listing.meta.dynamicPricing) && (
-              <span className="text-amber-700 bg-amber-100 rounded-full px-2 py-0.5 font-medium">
+              <span className="text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/50 rounded-full px-2 py-0.5 font-medium">
                 🔥 Live pricing
               </span>
             )}
           </div>
         </div>
-        <div className="text-right shrink-0">
+        <div className="text-right shrink-0 ml-auto">
           <div className="text-2xl font-bold text-brand-700">
             {isCab && !quote ? "—" : `₹${displayPrice.toLocaleString("en-IN")}`}
           </div>
@@ -186,7 +189,7 @@ export function ListingDetail() {
                 <span className="text-slate-500">Base ₹{quote.baseFare} + ₹{quote.distanceFare} dist. + ₹{quote.timeFare} time</span>
               </div>
               <div className="flex justify-between font-medium">
-                <span className={quote.surgeMultiplier > 1 ? "text-amber-700" : "text-slate-600"}>
+                <span className={quote.surgeMultiplier > 1 ? "text-amber-700 dark:text-amber-400" : "text-slate-600"}>
                   {quote.surgeMultiplier > 1 ? `⚡ ${quote.surgeMultiplier}× surge — ${quote.surgeReason}` : "No surge right now"}
                 </span>
                 <span>₹{quote.total}</span>

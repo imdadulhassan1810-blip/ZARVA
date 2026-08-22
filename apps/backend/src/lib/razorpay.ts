@@ -32,3 +32,19 @@ export function verifyRazorpaySignature(input: {
   if (expectedBuf.length !== actualBuf.length) return false;
   return crypto.timingSafeEqual(expectedBuf, actualBuf);
 }
+
+/**
+ * Issues a full refund for a captured Razorpay payment (used when a user cancels an order
+ * that was actually paid for online). Best-effort: returns null if Razorpay isn't configured
+ * or the refund call fails — the caller still cancels the order either way and surfaces
+ * refund failure separately rather than blocking the cancellation on it.
+ */
+export async function refundRazorpayPayment(paymentId: string) {
+  if (!razorpay) return null;
+  try {
+    return await razorpay.payments.refund(paymentId, {});
+  } catch (err) {
+    console.error(`Razorpay refund failed for payment ${paymentId}:`, err);
+    return null;
+  }
+}

@@ -86,7 +86,7 @@ export function Tracking() {
         <p className="text-xs text-slate-400 mt-0.5">Simulated for this demo — not a real driver/delivery GPS feed.</p>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <div className="bg-surface border border-slate-200 rounded-xl overflow-hidden">
         <div className="h-72">
           <MapContainer
             center={[state.position.lat, state.position.lng]}
@@ -97,7 +97,7 @@ export function Tracking() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
-            <Polyline positions={state.route.map((p) => [p.lat, p.lng])} pathOptions={{ color: "#2a5cf5", weight: 3, dashArray: "6 6" }} />
+            <Polyline positions={state.route.map((p) => [p.lat, p.lng])} pathOptions={{ color: "#5b3df6", weight: 3, dashArray: "6 6" }} />
             <Marker position={[state.position.lat, state.position.lng]} icon={icon} />
             <Recenter lat={state.position.lat} lng={state.position.lng} />
           </MapContainer>
@@ -139,7 +139,7 @@ export function Tracking() {
 
       {state.status === "completed" && (
         <div className="text-center space-y-2">
-          <p className="text-emerald-700 font-medium">✅ This order is complete.</p>
+          <p className="text-emerald-700 dark:text-emerald-400 font-medium">✅ This order is complete.</p>
           <button onClick={() => navigate("/orders")} className="text-brand-600 underline text-sm">
             Back to orders
           </button>

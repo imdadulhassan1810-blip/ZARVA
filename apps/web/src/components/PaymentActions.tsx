@@ -79,7 +79,7 @@ export function PaymentActions({ label, codEligible = false, onMockPay, onRazorp
           name: "OneApp",
           description: label,
           prefill: { name: user?.name, email: user?.email, contact: user?.phone ?? undefined },
-          theme: { color: "#2a5cf5" },
+          theme: { color: "#5b3df6" },
           method: RAZORPAY_METHOD_CONFIG[preferredMethod],
         });
 
@@ -126,7 +126,9 @@ export function PaymentActions({ label, codEligible = false, onMockPay, onRazorp
                   onClick={() => setMethod(opt)}
                   aria-pressed={selected}
                   className={`text-left rounded-lg border px-3 py-2 transition ${
-                    selected ? "border-brand-600 bg-brand-50 ring-1 ring-brand-600" : "border-slate-200 hover:border-slate-300"
+                    selected
+                      ? "border-brand-600 bg-brand-50 dark:bg-brand-900/30 ring-1 ring-brand-600"
+                      : "border-slate-200 hover:border-slate-300"
                   }`}
                 >
                   <div className="text-sm font-medium flex items-center gap-1.5">

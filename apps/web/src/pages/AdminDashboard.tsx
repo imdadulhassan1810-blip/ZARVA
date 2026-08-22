@@ -7,10 +7,10 @@ import { useAuth } from "../context/AuthContext";
 const ORDER_STATUSES: OrderStatus[] = ["pending_payment", "confirmed", "completed", "cancelled"];
 
 const STATUS_STYLES: Record<string, string> = {
-  pending_payment: "bg-amber-100 text-amber-700",
-  confirmed: "bg-blue-100 text-blue-700",
-  completed: "bg-green-100 text-green-700",
-  cancelled: "bg-red-100 text-red-700",
+  pending_payment: "bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400",
+  confirmed: "bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400",
+  completed: "bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-400",
+  cancelled: "bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400",
 };
 
 type Tab = "overview" | "users" | "orders";
@@ -107,7 +107,7 @@ export function AdminDashboard() {
             <StatCard label="Revenue" value={`₹${stats.totalRevenue.toLocaleString("en-IN")}`} />
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <div className="bg-surface border border-slate-200 rounded-xl p-4">
               <h2 className="font-semibold mb-2 text-sm">Orders by category</h2>
               <div className="space-y-1.5 text-sm">
                 {Object.entries(stats.ordersByCategory).map(([slug, count]) => (
@@ -120,7 +120,7 @@ export function AdminDashboard() {
                 ))}
               </div>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <div className="bg-surface border border-slate-200 rounded-xl p-4">
               <h2 className="font-semibold mb-2 text-sm">Orders by status</h2>
               <div className="space-y-1.5 text-sm">
                 {Object.entries(stats.ordersByStatus).map(([status, count]) => (
@@ -138,7 +138,9 @@ export function AdminDashboard() {
       )}
 
       {tab === "users" && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+        <div>
+        <p className="sm:hidden text-xs text-slate-400 mb-1">↔ Swipe to see more columns</p>
+        <div className="bg-surface border border-slate-200 rounded-xl overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
@@ -157,11 +159,11 @@ export function AdminDashboard() {
                   <td className="px-4 py-2 font-medium">{u.name}</td>
                   <td className="px-4 py-2 text-slate-600">
                     {u.email}
-                    {u.authProvider === "google" && <span className="ml-1.5 text-xs text-blue-700">(Google)</span>}
+                    {u.authProvider === "google" && <span className="ml-1.5 text-xs text-blue-700 dark:text-blue-400">(Google)</span>}
                   </td>
                   <td className="px-4 py-2">
                     {u.role === "admin" ? (
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">admin</span>
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-400">admin</span>
                     ) : (
                       <span className="text-xs text-slate-500">user</span>
                     )}
@@ -171,7 +173,7 @@ export function AdminDashboard() {
                   <td className="px-4 py-2">
                     <span
                       className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                        u.isActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                        u.isActive ? "bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-400" : "bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400"
                       }`}
                     >
                       {u.isActive ? "active" : "deactivated"}
@@ -183,7 +185,9 @@ export function AdminDashboard() {
                       disabled={busyId === u.id || u.id === me?.id}
                       title={u.id === me?.id ? "You can't deactivate your own account" : undefined}
                       className={`text-xs font-medium px-3 py-1.5 rounded-md disabled:opacity-40 disabled:cursor-not-allowed ${
-                        u.isActive ? "bg-red-50 text-red-700 hover:bg-red-100" : "bg-green-50 text-green-700 hover:bg-green-100"
+                        u.isActive
+                          ? "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/60"
+                          : "bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-950/60"
                       }`}
                     >
                       {u.isActive ? "Deactivate" : "Reactivate"}
@@ -194,10 +198,13 @@ export function AdminDashboard() {
             </tbody>
           </table>
         </div>
+        </div>
       )}
 
       {tab === "orders" && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+        <div>
+        <p className="sm:hidden text-xs text-slate-400 mb-1">↔ Swipe to see more columns</p>
+        <div className="bg-surface border border-slate-200 rounded-xl overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
@@ -246,6 +253,7 @@ export function AdminDashboard() {
             </tbody>
           </table>
         </div>
+        </div>
       )}
     </div>
   );
@@ -253,7 +261,7 @@ export function AdminDashboard() {
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4">
+    <div className="bg-surface border border-slate-200 rounded-xl p-4">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="text-2xl font-bold mt-1">{value}</div>
     </div>

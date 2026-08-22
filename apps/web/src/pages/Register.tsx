@@ -41,7 +41,7 @@ export function Register() {
   }
 
   return (
-    <div className="max-w-sm mx-auto bg-white border border-slate-200 rounded-xl p-6 mt-8">
+    <div className="max-w-sm mx-auto bg-surface border border-slate-200 rounded-xl p-6 mt-8">
       <h1 className="text-xl font-bold mb-1">Create an account</h1>
       <p className="text-sm text-slate-500 mb-4">
         Already have one?{" "}

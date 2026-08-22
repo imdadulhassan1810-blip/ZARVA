@@ -50,7 +50,7 @@ const MAP_HTML = `
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
-        line = L.polyline(route.map(p => [p.lat, p.lng]), { color: '#2a5cf5', weight: 3, dashArray: '6 6' }).addTo(map);
+        line = L.polyline(route.map(p => [p.lat, p.lng]), { color: '#5b3df6', weight: 3, dashArray: '6 6' }).addTo(map);
         const icon = L.divIcon({ html: '<div style="font-size:28px">' + emoji + '</div>', className: '', iconSize: [28,28], iconAnchor: [14,14] });
         marker = L.marker([position.lat, position.lng], { icon }).addTo(map);
       } else {

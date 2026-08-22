@@ -1,0 +1,19 @@
+version: "3.8"
+
+# Local dev database for the backend. Start with: docker compose up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oneapp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: oneapp
+      POSTGRES_PASSWORD: oneapp
+      POSTGRES_DB: oneapp
+    ports:
+      - "5432:5432"
+    volumes:
+      - oneapp-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  oneapp-postgres-data:

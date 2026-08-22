@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  phone        String?
+  createdAt    DateTime   @default(now())
+  cartItems    CartItem[]
+  orders       Order[]
+}
+
+model Listing {
+  id           String     @id @default(cuid())
+  categorySlug String
+  title        String
+  subtitle     String?
+  imageEmoji   String
+  price        Float
+  priceUnit    String
+  rating       Float?
+  location     String?
+  tags         String[]
+  meta         Json       @default("{}")
+  createdAt    DateTime   @default(now())
+  cartItems    CartItem[]
+
+  @@index([categorySlug])
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, listingId])
+}
+
+model Order {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String
+  status       String   @default("confirmed")
+  categorySlug String
+  total        Float
+  items        Json
+  details      Json     @default("{}")
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}

@@ -154,6 +154,17 @@ password: adminpass123
 - **Sign-up:** anyone can create an account from **Register** on either
   client — name, email, password, optional phone. No approval step; the
   account is usable immediately.
+- **Sign in with Google:** both the Login and Register screens offer a
+  **Continue with Google** button whenever the backend has `GOOGLE_CLIENT_ID`
+  set (see [Setting up the real
+  integrations](#setting-up-the-real-integrations)) — hidden entirely
+  otherwise, password login/register keeps working either way. First sign-in
+  with a given Google account creates the local user (no password set); if a
+  password account already exists with that email, signing in with Google
+  links the two instead of erroring, so it's the same account either way in.
+  The ID token Google returns is verified server-side
+  (`apps/backend/src/lib/google.ts`) before any session is issued — never
+  trusted as-is.
 - **Admin login:** there's no separate admin sign-in screen — an admin logs
   in through the exact same **Login** form as everyone else. The server looks
   up the account's `role` on every request (not something embedded once in
@@ -209,7 +220,9 @@ Run from the repo root (npm workspaces):
 
 ## What's real vs. mocked
 
-- **Real:** auth (JWT + bcrypt), Postgres persistence, cart/checkout logic,
+- **Real:** auth (JWT + bcrypt, plus **Sign in with Google** — real ID token
+  verification server-side via `google-auth-library`, activates once you set
+  `GOOGLE_CLIENT_ID`), Postgres persistence, cart/checkout logic,
   booking logic, order history, full REST API, shared type-safe client used
   by both frontends, **role-based access control** (per-request DB-backed
   admin check, not a trusted JWT claim; deactivated accounts locked out
@@ -251,6 +264,29 @@ Run from the repo root (npm workspaces):
   Expo account project) and it wires up `extra.eas.projectId` in
   `app.json` automatically. Without it, notification registration silently
   no-ops — nothing breaks, you just won't get pushes.
+- **Sign in with Google:**
+  1. In the [Google Cloud Console credentials
+     page](https://console.cloud.google.com/apis/credentials), create an
+     OAuth 2.0 Client ID of type **Web application**. Add
+     `http://localhost:5173` as an authorized JavaScript origin for local web
+     dev (and your real domain once deployed). Set the resulting client id as
+     `GOOGLE_CLIENT_ID` in `apps/backend/.env` — this one alone is enough to
+     light up the button on **web**, and on **mobile when running via `expo
+     start --web`**.
+  2. A real iOS/Android build needs its own native client too — create an
+     **iOS** client (bundle id `com.oneapp.mobile`, matching `app.json`) and
+     an **Android** client (package `com.oneapp.mobile` + your build's SHA-1),
+     and set them as `GOOGLE_IOS_CLIENT_ID` / `GOOGLE_ANDROID_CLIENT_ID`.
+     Google issues a different token audience per client type, so the backend
+     accepts all three ids you've configured as valid.
+  3. Mobile Google sign-in needs a fixed redirect URI to register with
+     Google, which **Expo Go can't provide** (its URI changes with your dev
+     machine's address) — you'll need a [custom dev
+     client](https://docs.expo.dev/develop/development-builds/introduction/)
+     or a standalone/EAS build (`app.json` already sets `"scheme": "oneapp"`
+     for this). Testing via `expo start --web` doesn't have this problem.
+  4. Leave all three unset to hide the Google button everywhere — password
+     login/register is unaffected either way.
 - **Grocery live search & cab maps:** work out of the box, no setup — they
   call Open Food Facts / OpenStreetMap directly with no API key.
 
@@ -258,13 +294,14 @@ Run from the repo root (npm workspaces):
 > built in blocks outbound requests to arbitrary internet hosts (only npm,
 > GitHub, etc. are allowlisted), so `world.openfoodfacts.org`,
 > `nominatim.openstreetmap.org`, `tile.openstreetmap.org`,
-> `checkout.razorpay.com` and `exp.host` could not be reached to live-test
-> those calls end-to-end from inside that sandbox. Every one of those code
-> paths was verified for correct request shape, and — for the network calls
-> that could reach the blocked hosts — the graceful fallback UI (e.g. "Live
-> product search is temporarily unavailable") was confirmed working. Run it
-> anywhere with normal internet access (your machine, CI, a real server) and
-> these should work live; if something doesn't, it's worth a bug report.
+> `checkout.razorpay.com`, `accounts.google.com` and `exp.host` could not be
+> reached to live-test those calls end-to-end from inside that sandbox. Every
+> one of those code paths was verified for correct request shape, and — for
+> the network calls that could reach the blocked hosts — the graceful
+> fallback UI (e.g. "Live product search is temporarily unavailable", or the
+> Google button simply not appearing) was confirmed working. Run it anywhere
+> with normal internet access (your machine, CI, a real server) and these
+> should work live; if something doesn't, it's worth a bug report.
 
 ## Extending to a real provider
 

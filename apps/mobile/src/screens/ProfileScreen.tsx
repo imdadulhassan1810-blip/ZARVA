@@ -14,7 +14,7 @@ export function ProfileScreen({ navigation }: Props) {
     <View style={styles.screen}>
       <View style={styles.card}>
         <Field label="Name" value={user.name} />
-        <Field label="Email" value={user.email} />
+        <Field label="Email" value={user.authProvider === "google" ? `${user.email}  ·  via Google` : user.email} />
         {user.phone ? <Field label="Phone" value={user.phone} /> : null}
         <Field label="Member since" value={new Date(user.createdAt).toLocaleDateString()} />
       </View>

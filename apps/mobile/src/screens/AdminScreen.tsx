@@ -111,7 +111,7 @@ export function AdminScreen() {
                   <Text style={styles.badgeText}>{u.isActive ? "active" : "deactivated"}</Text>
                 </View>
               </View>
-              <Text style={styles.muted}>{u.email}</Text>
+              <Text style={styles.muted}>{u.email}{u.authProvider === "google" ? " · Google" : ""}</Text>
               <Text style={styles.muted}>
                 {u.orderCount} orders · ₹{u.totalSpent.toLocaleString("en-IN")} spent {u.role === "admin" ? "· admin" : ""}
               </Text>

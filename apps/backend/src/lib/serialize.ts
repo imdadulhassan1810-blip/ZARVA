@@ -8,6 +8,7 @@ export function toPublicUser(user: PrismaUser): User {
     email: user.email,
     phone: user.phone,
     role: user.role === "admin" ? "admin" : "user",
+    authProvider: user.googleId ? "google" : "password",
     createdAt: user.createdAt.toISOString(),
   };
 }
@@ -19,6 +20,7 @@ export function toAdminUser(user: PrismaUser, orderCount: number, totalSpent: nu
     email: user.email,
     phone: user.phone,
     role: user.role === "admin" ? "admin" : "user",
+    authProvider: user.googleId ? "google" : "password",
     isActive: user.isActive,
     createdAt: user.createdAt.toISOString(),
     orderCount,

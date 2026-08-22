@@ -14,7 +14,12 @@ export function Profile() {
       </div>
       <div>
         <div className="text-xs text-slate-500">Email</div>
-        <div className="font-medium">{user.email}</div>
+        <div className="font-medium flex items-center gap-2">
+          {user.email}
+          {user.authProvider === "google" && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">via Google</span>
+          )}
+        </div>
       </div>
       {user.phone && (
         <div>

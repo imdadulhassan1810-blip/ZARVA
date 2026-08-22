@@ -155,7 +155,10 @@ export function AdminDashboard() {
               {users.map((u) => (
                 <tr key={u.id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-2 font-medium">{u.name}</td>
-                  <td className="px-4 py-2 text-slate-600">{u.email}</td>
+                  <td className="px-4 py-2 text-slate-600">
+                    {u.email}
+                    {u.authProvider === "google" && <span className="ml-1.5 text-xs text-blue-700">(Google)</span>}
+                  </td>
                   <td className="px-4 py-2">
                     {u.role === "admin" ? (
                       <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">admin</span>

@@ -11,7 +11,11 @@ model User {
   id           String     @id @default(cuid())
   name         String
   email        String     @unique
-  passwordHash String
+  /// Null for accounts that only ever signed in via Google — see googleId.
+  passwordHash String?
+  /// Set once this account has signed in with Google at least once (either created via
+  /// Google, or a password account that later linked Google by using the same email).
+  googleId     String?    @unique
   phone        String?
   /// "user" or "admin". Admins get read access to every user's orders plus limited
   /// management (order status, activating/deactivating accounts) via /api/admin/*.

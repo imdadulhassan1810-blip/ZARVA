@@ -3,6 +3,7 @@
     "name": "OneApp",
     "slug": "oneapp",
     "version": "0.1.0",
+    "scheme": "oneapp",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "splash": {

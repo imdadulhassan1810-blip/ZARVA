@@ -1,4 +1,6 @@
 export type UserRole = "user" | "admin";
+/** How this account authenticates. "google" accounts have no password — see /api/auth/google. */
+export type AuthProvider = "password" | "google";
 
 export interface User {
   id: string;
@@ -6,6 +8,7 @@ export interface User {
   email: string;
   phone?: string | null;
   role: UserRole;
+  authProvider: AuthProvider;
   createdAt: string;
 }
 
@@ -110,6 +113,15 @@ export interface RazorpayConfig {
   keyId?: string;
 }
 
+export interface GoogleAuthConfig {
+  enabled: boolean;
+  /** "Web application" OAuth client id — used by the web app, and as the Expo Go / web-target client id on mobile. */
+  clientId?: string;
+  /** Native OAuth client ids, required for Google sign-in in a real iOS/Android build (not Expo Go) — see the README. */
+  iosClientId?: string;
+  androidClientId?: string;
+}
+
 export interface RazorpayCheckoutInfo {
   order: Order;
   razorpayOrderId: string;
@@ -178,6 +190,7 @@ export interface AdminUser {
   email: string;
   phone?: string | null;
   role: UserRole;
+  authProvider: AuthProvider;
   isActive: boolean;
   createdAt: string;
   orderCount: number;

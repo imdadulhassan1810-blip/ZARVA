@@ -7,6 +7,7 @@ import type {
   CartItem,
   FareQuote,
   GeoPoint,
+  GoogleAuthConfig,
   Listing,
   ListingSearchQuery,
   OnlinePaymentMethod,
@@ -95,6 +96,22 @@ export class ApiClient {
 
   async me() {
     return this.request<User>("/api/auth/me");
+  }
+
+  /** Whether the backend has GOOGLE_CLIENT_ID configured, and the client id to use for the Sign in with Google widget. */
+  async getGoogleAuthConfig() {
+    return this.request<GoogleAuthConfig>("/api/auth/google/config", { auth: false });
+  }
+
+  /** Exchanges a Google ID token (from the Sign in with Google widget / expo-auth-session) for a OneApp session — creates the account on first sign-in, or links it to an existing password account with the same email. */
+  async loginWithGoogle(idToken: string) {
+    const data = await this.request<AuthResponse>("/api/auth/google", {
+      method: "POST",
+      body: { idToken },
+      auth: false,
+    });
+    await this.tokenStore.set(data.token);
+    return data;
   }
 
   // --- Categories & listings ---

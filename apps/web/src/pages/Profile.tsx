@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export function Profile() {
@@ -25,6 +26,18 @@ export function Profile() {
         <div className="text-xs text-slate-500">Member since</div>
         <div className="font-medium">{new Date(user.createdAt).toLocaleDateString()}</div>
       </div>
+      {user.role === "admin" && (
+        <div className="pt-2 border-t">
+          <div className="text-xs text-slate-500 mb-1">Role</div>
+          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 inline-block mb-3">admin</span>
+          <Link
+            to="/admin"
+            className="block text-center bg-brand-600 hover:bg-brand-700 text-white rounded-md py-2 text-sm font-medium"
+          >
+            🛠️ Open admin console
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

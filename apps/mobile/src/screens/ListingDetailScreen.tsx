@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { FareQuote, GeoPoint, Listing, Order } from "@oneapp/shared";
-import { CATEGORY_BY_SLUG, TRACKABLE_CATEGORY_SLUGS } from "@oneapp/shared";
+import { CATEGORY_BY_SLUG, COD_ELIGIBLE_CATEGORY_SLUGS, TRACKABLE_CATEGORY_SLUGS } from "@oneapp/shared";
 import type { RootStackParamList } from "../navigation/types";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -215,14 +215,21 @@ export function ListingDetailScreen({ route, navigation }: Props) {
         ) : (
           <PaymentActions
             label={isCab && quote ? `Book now — ₹${quote.total}` : "Book now"}
-            onMockPay={() =>
-              api.createBooking({ listingId: listing.id, quantity, details: isCab ? { pickup, drop } : undefined })
+            codEligible={COD_ELIGIBLE_CATEGORY_SLUGS.includes(listing.categorySlug)}
+            onMockPay={(method) =>
+              api.createBooking({
+                listingId: listing.id,
+                quantity,
+                details: isCab ? { pickup, drop } : undefined,
+                paymentMethod: method === "cod" ? "cod" : "mock",
+              })
             }
-            onRazorpayInit={() =>
+            onRazorpayInit={(preferredMethod) =>
               api.createBookingWithRazorpay({
                 listingId: listing.id,
                 quantity,
                 details: isCab ? { pickup, drop } : undefined,
+                preferredMethod,
               })
             }
             onSuccess={handleBookingSuccess}

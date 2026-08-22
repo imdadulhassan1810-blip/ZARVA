@@ -106,12 +106,13 @@ export function Bills() {
                   amount: bill.amountDue,
                 })
               }
-              onRazorpayInit={() =>
+              onRazorpayInit={(preferredMethod) =>
                 api.payBillWithRazorpay({
                   billerType: bill.billerType,
                   billerName: bill.billerName,
                   consumerNumber: bill.consumerNumber,
                   amount: bill.amountDue,
+                  preferredMethod,
                 })
               }
               onSuccess={() => setPaid(true)}

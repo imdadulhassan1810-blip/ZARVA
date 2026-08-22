@@ -10,6 +10,7 @@ import { sendPushNotification } from "../lib/push";
 import { razorpay, razorpayEnabled, getRazorpayKeyId } from "../lib/razorpay";
 import { computeCabFare } from "../lib/pricing";
 import { finalizeTrackingSpec, resolveTrackingRoute } from "../lib/tracking";
+import { checkCodEligibility, mockMethodSchema, onlineMethodSchema } from "../lib/paymentMethod";
 
 export const bookingsRouter = Router();
 bookingsRouter.use(requireAuth);
@@ -20,6 +21,11 @@ const bookingSchema = z.object({
   listingId: z.string().min(1),
   quantity: z.number().int().min(1).max(20).default(1),
   details: z.record(z.unknown()).optional(),
+  paymentMethod: mockMethodSchema.optional(),
+});
+
+const bookingRazorpaySchema = bookingSchema.omit({ paymentMethod: true }).extend({
+  preferredMethod: onlineMethodSchema.optional(),
 });
 
 async function resolveBookableListing(listingId: string) {
@@ -71,7 +77,7 @@ bookingsRouter.post("/", async (req: AuthedRequest, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "invalid_input", message: "listingId is required" });
   }
-  const { listingId, quantity, details } = parsed.data;
+  const { listingId, quantity, details, paymentMethod } = parsed.data;
 
   const resolved = await resolveBookableListing(listingId);
   if (resolved.error === "not_found") return res.status(404).json({ error: "not_found", message: "Listing not found" });
@@ -79,6 +85,9 @@ bookingsRouter.post("/", async (req: AuthedRequest, res) => {
     return res.status(400).json({ error: "not_bookable", message: "This category is bought via the cart, not booked directly" });
   }
   const { listing } = resolved;
+
+  const codError = checkCodEligibility(listing.categorySlug, paymentMethod);
+  if (codError) return res.status(400).json(codError);
 
   const priced = priceBooking(listing, quantity, details);
   if ("error" in priced) return res.status(400).json({ error: priced.error, message: priced.message });
@@ -91,6 +100,7 @@ bookingsRouter.post("/", async (req: AuthedRequest, res) => {
       userId: req.userId!,
       type: "booking",
       status: "confirmed",
+      paymentMethod: paymentMethod ?? "mock",
       categorySlug: listing.categorySlug,
       total: priced.total,
       items: [
@@ -124,11 +134,11 @@ bookingsRouter.post("/razorpay", async (req: AuthedRequest, res) => {
     });
   }
 
-  const parsed = bookingSchema.safeParse(req.body);
+  const parsed = bookingRazorpaySchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "invalid_input", message: "listingId is required" });
   }
-  const { listingId, quantity, details } = parsed.data;
+  const { listingId, quantity, details, preferredMethod } = parsed.data;
 
   const resolved = await resolveBookableListing(listingId);
   if (resolved.error === "not_found") return res.status(404).json({ error: "not_found", message: "Listing not found" });
@@ -142,12 +152,14 @@ bookingsRouter.post("/razorpay", async (req: AuthedRequest, res) => {
 
   // Tracking's clock doesn't start yet (payment isn't confirmed) — only the fixed route, if any.
   const detailsWithRoute = withTrackingRoute(listing, details);
+  const method = preferredMethod ?? "razorpay";
 
   const order = await prisma.order.create({
     data: {
       userId: req.userId!,
       type: "booking",
       status: "pending_payment",
+      paymentMethod: method,
       categorySlug: listing.categorySlug,
       total: priced.total,
       items: [
@@ -181,5 +193,6 @@ bookingsRouter.post("/razorpay", async (req: AuthedRequest, res) => {
     amount: priced.total,
     currency: "INR",
     keyId: getRazorpayKeyId(),
+    preferredMethod: method,
   });
 });

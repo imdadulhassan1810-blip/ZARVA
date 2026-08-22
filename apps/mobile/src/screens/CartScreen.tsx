@@ -1,6 +1,7 @@
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { Order } from "@oneapp/shared";
+import { COD_ELIGIBLE_CATEGORY_SLUGS } from "@oneapp/shared";
 import type { RootStackParamList } from "../navigation/types";
 import { useCart } from "../context/CartContext";
 import { api } from "../lib/api";
@@ -13,6 +14,8 @@ export function CartScreen({ navigation }: Props) {
   const { items, updateQuantity, removeItem, refresh } = useCart();
 
   const total = items.reduce((sum, i) => sum + i.listing.price * i.quantity, 0);
+  // Mirrors the backend, which prices/validates COD against the first item's category.
+  const codEligible = items.length > 0 && COD_ELIGIBLE_CATEGORY_SLUGS.includes(items[0].listing.categorySlug);
 
   async function handleSuccess(order: Order) {
     await refresh();
@@ -71,8 +74,9 @@ export function CartScreen({ navigation }: Props) {
         </View>
         <PaymentActions
           label="Checkout"
-          onMockPay={() => api.checkoutCart()}
-          onRazorpayInit={() => api.checkoutCartWithRazorpay()}
+          codEligible={codEligible}
+          onMockPay={(method) => api.checkoutCart(undefined, method === "cod" ? "cod" : "mock")}
+          onRazorpayInit={(preferredMethod) => api.checkoutCartWithRazorpay(undefined, preferredMethod)}
           onSuccess={handleSuccess}
         />
       </View>

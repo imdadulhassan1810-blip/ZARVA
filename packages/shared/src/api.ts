@@ -1,4 +1,7 @@
 import type {
+  AdminOrder,
+  AdminStats,
+  AdminUser,
   AuthResponse,
   Bill,
   CartItem,
@@ -6,7 +9,9 @@ import type {
   GeoPoint,
   Listing,
   ListingSearchQuery,
+  OnlinePaymentMethod,
   Order,
+  OrderStatus,
   RazorpayCheckoutInfo,
   RazorpayConfig,
   RazorpayVerifyInput,
@@ -135,15 +140,16 @@ export class ApiClient {
     return this.request<CartItem[]>(`/api/cart/${itemId}`, { method: "DELETE" });
   }
 
-  async checkoutCart(details?: Record<string, unknown>) {
-    return this.request<Order>("/api/cart/checkout", { method: "POST", body: { details } });
+  /** `paymentMethod` "cod" only valid for COD-eligible categories (see COD_ELIGIBLE_CATEGORY_SLUGS) — omit/"mock" for the demo fallback. */
+  async checkoutCart(details?: Record<string, unknown>, paymentMethod?: "mock" | "cod") {
+    return this.request<Order>("/api/cart/checkout", { method: "POST", body: { details, paymentMethod } });
   }
 
   /** Same as checkoutCart, but pays via Razorpay instead of instant mock success. Returns a pending order plus what's needed to open Razorpay Checkout; call verifyRazorpayPayment once it completes. */
-  async checkoutCartWithRazorpay(details?: Record<string, unknown>) {
+  async checkoutCartWithRazorpay(details?: Record<string, unknown>, preferredMethod?: OnlinePaymentMethod) {
     return this.request<RazorpayCheckoutInfo>("/api/cart/checkout/razorpay", {
       method: "POST",
-      body: { details },
+      body: { details, preferredMethod },
     });
   }
 
@@ -152,6 +158,7 @@ export class ApiClient {
     listingId: string;
     quantity?: number;
     details?: Record<string, unknown>;
+    paymentMethod?: "mock" | "cod";
   }) {
     return this.request<Order>("/api/bookings", { method: "POST", body: input });
   }
@@ -160,11 +167,12 @@ export class ApiClient {
     listingId: string;
     quantity?: number;
     details?: Record<string, unknown>;
+    preferredMethod?: OnlinePaymentMethod;
   }) {
     return this.request<RazorpayCheckoutInfo>("/api/bookings/razorpay", { method: "POST", body: input });
   }
 
-  // --- Bills ---
+  // --- Bills (online payment only — no COD for a bill) ---
   async lookupBill(billerType: string, consumerNumber: string) {
     return this.request<Bill>(
       `/api/bills/lookup?billerType=${encodeURIComponent(billerType)}&consumerNumber=${encodeURIComponent(consumerNumber)}`,
@@ -180,6 +188,7 @@ export class ApiClient {
     billerName: string;
     consumerNumber: string;
     amount: number;
+    preferredMethod?: OnlinePaymentMethod;
   }) {
     return this.request<RazorpayCheckoutInfo>("/api/bills/pay/razorpay", { method: "POST", body: input });
   }
@@ -220,5 +229,26 @@ export class ApiClient {
   // --- Live tracking (cab / food / home services) ---
   async getTracking(orderId: string) {
     return this.request<TrackingState>(`/api/tracking/${orderId}`);
+  }
+
+  // --- Admin (requires an admin-role account; server enforces this regardless of client checks) ---
+  async adminStats() {
+    return this.request<AdminStats>("/api/admin/stats");
+  }
+
+  async adminListUsers() {
+    return this.request<AdminUser[]>("/api/admin/users");
+  }
+
+  async adminSetUserActive(userId: string, isActive: boolean) {
+    return this.request<AdminUser>(`/api/admin/users/${userId}`, { method: "PATCH", body: { isActive } });
+  }
+
+  async adminListOrders() {
+    return this.request<AdminOrder[]>("/api/admin/orders");
+  }
+
+  async adminSetOrderStatus(orderId: string, status: OrderStatus) {
+    return this.request<AdminOrder>(`/api/admin/orders/${orderId}`, { method: "PATCH", body: { status } });
   }
 }

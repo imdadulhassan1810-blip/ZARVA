@@ -12,6 +12,7 @@ import { geocodeRouter } from "./routes/geocode";
 import { notificationsRouter } from "./routes/notifications";
 import { cabsRouter } from "./routes/cabs";
 import { trackingRouter } from "./routes/tracking";
+import { adminRouter } from "./routes/admin";
 
 export function createApp() {
   const app = express();
@@ -33,6 +34,7 @@ export function createApp() {
   app.use("/api/notifications", notificationsRouter);
   app.use("/api/cabs", cabsRouter);
   app.use("/api/tracking", trackingRouter);
+  app.use("/api/admin", adminRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "not_found", message: "Route not found" });

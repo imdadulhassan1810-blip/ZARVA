@@ -52,6 +52,9 @@ authRouter.post("/login", async (req, res) => {
   if (!ok) {
     return res.status(401).json({ error: "invalid_credentials", message: "Invalid email or password" });
   }
+  if (!user.isActive) {
+    return res.status(403).json({ error: "account_disabled", message: "This account has been deactivated. Contact an admin." });
+  }
 
   const token = signToken(user.id);
   res.json({ user: toPublicUser(user), token });
@@ -60,5 +63,8 @@ authRouter.post("/login", async (req, res) => {
 authRouter.get("/me", requireAuth, async (req: AuthedRequest, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.userId! } });
   if (!user) return res.status(404).json({ error: "not_found", message: "User not found" });
+  if (!user.isActive) {
+    return res.status(403).json({ error: "account_disabled", message: "This account has been deactivated. Contact an admin." });
+  }
   res.json(toPublicUser(user));
 });

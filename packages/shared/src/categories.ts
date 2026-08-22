@@ -153,6 +153,21 @@ export const TRACKABLE_CATEGORY_SLUGS = ["cab", "food", "homeservices"];
 /** Categories whose listing price is computed dynamically (distance/demand/date) rather than a fixed seed price. */
 export const DYNAMIC_PRICING_CATEGORY_SLUGS = ["cab", "hotel", "flight"];
 
+/** Categories where Cash on Delivery is a real-world option (you're physically handed something or
+ *  visited) — travel-by-ticket categories (flight/train/bus/hotel/movies) and bill payments stay
+ *  online-payment-only, same as real platforms. */
+export const COD_ELIGIBLE_CATEGORY_SLUGS = [
+  "cab",
+  "gas",
+  "homeservices",
+  "grocery",
+  "food",
+  "pharmacy",
+  "stationary",
+  "electronics",
+  "clothing",
+];
+
 export const BILLER_TYPES = [
   { slug: "electricity", name: "Electricity", icon: "💡" },
   { slug: "water", name: "Water", icon: "🚰" },

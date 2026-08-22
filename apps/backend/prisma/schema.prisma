@@ -13,6 +13,11 @@ model User {
   email        String     @unique
   passwordHash String
   phone        String?
+  /// "user" or "admin". Admins get read access to every user's orders plus limited
+  /// management (order status, activating/deactivating accounts) via /api/admin/*.
+  role         String     @default("user")
+  /// Deactivated accounts can't log in. Admins can't deactivate their own account.
+  isActive     Boolean    @default(true)
   /// Expo push token for this user's mobile device, if they've granted notification
   /// permission. Nullable — web users and users who haven't opted in have none.
   pushToken    String?
@@ -62,6 +67,8 @@ model Order {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   type         String
   status       String   @default("confirmed")
+  /// "mock" | "cod" | "card" | "netbanking" | "razorpay" — how this order was (or will be) paid for.
+  paymentMethod String  @default("mock")
   categorySlug String
   total        Float
   items        Json

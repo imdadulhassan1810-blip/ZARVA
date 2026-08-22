@@ -1,5 +1,5 @@
 import type { User as PrismaUser, Listing as PrismaListing, Order as PrismaOrder, CartItem as PrismaCartItem } from "@prisma/client";
-import type { Listing, Order, User, CartItem } from "@oneapp/shared";
+import type { AdminOrder, AdminUser, Listing, Order, User, CartItem } from "@oneapp/shared";
 
 export function toPublicUser(user: PrismaUser): User {
   return {
@@ -7,7 +7,22 @@ export function toPublicUser(user: PrismaUser): User {
     name: user.name,
     email: user.email,
     phone: user.phone,
+    role: user.role === "admin" ? "admin" : "user",
     createdAt: user.createdAt.toISOString(),
+  };
+}
+
+export function toAdminUser(user: PrismaUser, orderCount: number, totalSpent: number): AdminUser {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    role: user.role === "admin" ? "admin" : "user",
+    isActive: user.isActive,
+    createdAt: user.createdAt.toISOString(),
+    orderCount,
+    totalSpent,
   };
 }
 
@@ -43,10 +58,20 @@ export function toOrder(order: PrismaOrder): Order {
     id: order.id,
     type: order.type as Order["type"],
     status: order.status as Order["status"],
+    paymentMethod: (order.paymentMethod as Order["paymentMethod"]) ?? "mock",
     categorySlug: order.categorySlug,
     total: order.total,
     items: order.items as unknown as Order["items"],
     details: (order.details as Record<string, unknown>) ?? {},
     createdAt: order.createdAt.toISOString(),
+  };
+}
+
+export function toAdminOrder(order: PrismaOrder & { user: PrismaUser }): AdminOrder {
+  return {
+    ...toOrder(order),
+    userId: order.userId,
+    userName: order.user.name,
+    userEmail: order.user.email,
   };
 }

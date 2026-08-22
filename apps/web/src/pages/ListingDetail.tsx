@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { FareQuote, GeoPoint, Listing, Order } from "@oneapp/shared";
-import { CATEGORY_BY_SLUG, TRACKABLE_CATEGORY_SLUGS } from "@oneapp/shared";
+import { CATEGORY_BY_SLUG, COD_ELIGIBLE_CATEGORY_SLUGS, TRACKABLE_CATEGORY_SLUGS } from "@oneapp/shared";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
@@ -235,8 +235,13 @@ export function ListingDetail() {
         ) : (
           <PaymentActions
             label={isCab && quote ? `Book now — ₹${quote.total}` : "Book now"}
-            onMockPay={() => api.createBooking({ listingId: listing.id, quantity, details: bookingDetails() })}
-            onRazorpayInit={() => api.createBookingWithRazorpay({ listingId: listing.id, quantity, details: bookingDetails() })}
+            codEligible={COD_ELIGIBLE_CATEGORY_SLUGS.includes(listing.categorySlug)}
+            onMockPay={(method) =>
+              api.createBooking({ listingId: listing.id, quantity, details: bookingDetails(), paymentMethod: method === "cod" ? "cod" : "mock" })
+            }
+            onRazorpayInit={(preferredMethod) =>
+              api.createBookingWithRazorpay({ listingId: listing.id, quantity, details: bookingDetails(), preferredMethod })
+            }
             onSuccess={handleBookingSuccess}
           />
         )

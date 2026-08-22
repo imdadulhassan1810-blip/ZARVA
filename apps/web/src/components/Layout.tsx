@@ -20,6 +20,11 @@ export function Layout() {
             <NavLink to="/bills" className="hover:underline">
               Bill Payments
             </NavLink>
+            {user?.role === "admin" && (
+              <NavLink to="/admin" className="hover:underline">
+                🛠️ Admin
+              </NavLink>
+            )}
           </nav>
           <div className="flex items-center gap-4">
             <Link to="/cart" className="relative hover:underline text-sm font-medium">

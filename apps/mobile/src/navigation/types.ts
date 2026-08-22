@@ -9,4 +9,5 @@ export type RootStackParamList = {
   Orders: undefined;
   Profile: undefined;
   Tracking: { orderId: string };
+  Admin: undefined;
 };

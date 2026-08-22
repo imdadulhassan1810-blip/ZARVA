@@ -146,9 +146,19 @@ async function main() {
   if (!existingDemo) {
     const passwordHash = await bcrypt.hash("password123", 10);
     await prisma.user.create({
-      data: { name: "Demo User", email: demoEmail, passwordHash, phone: "+91 90000 00000" },
+      data: { name: "Demo User", email: demoEmail, passwordHash, phone: "+91 90000 00000", role: "user" },
     });
     console.log(`Created demo user: ${demoEmail} / password123`);
+  }
+
+  const adminEmail = "admin@oneapp.dev";
+  const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
+  if (!existingAdmin) {
+    const passwordHash = await bcrypt.hash("adminpass123", 10);
+    await prisma.user.create({
+      data: { name: "OneApp Admin", email: adminEmail, passwordHash, phone: "+91 90000 00001", role: "admin" },
+    });
+    console.log(`Created admin user: ${adminEmail} / adminpass123`);
   }
 }
 

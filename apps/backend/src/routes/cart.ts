@@ -8,6 +8,7 @@ import { ensureListingExists } from "../lib/listings";
 import { sendPushNotification } from "../lib/push";
 import { razorpay, razorpayEnabled, getRazorpayKeyId } from "../lib/razorpay";
 import { finalizeTrackingSpec, resolveTrackingRoute } from "../lib/tracking";
+import { checkCodEligibility, mockMethodSchema, onlineMethodSchema } from "../lib/paymentMethod";
 
 export const cartRouter = Router();
 cartRouter.use(requireAuth);
@@ -96,14 +97,22 @@ async function summarizeCart(userId: string) {
   };
 }
 
-const checkoutSchema = z.object({ details: z.record(z.unknown()).optional() });
+const checkoutSchema = z.object({ details: z.record(z.unknown()).optional(), paymentMethod: mockMethodSchema.optional() });
+const razorpayCheckoutSchema = z.object({
+  details: z.record(z.unknown()).optional(),
+  preferredMethod: onlineMethodSchema.optional(),
+});
 
 cartRouter.post("/checkout", async (req: AuthedRequest, res) => {
   const parsed = checkoutSchema.safeParse(req.body ?? {});
   const details = parsed.success ? (parsed.data.details ?? {}) : {};
+  const paymentMethod = parsed.success ? parsed.data.paymentMethod : undefined;
 
   const summary = await summarizeCart(req.userId!);
   if (!summary) return res.status(400).json({ error: "empty_cart", message: "Your cart is empty" });
+
+  const codError = checkCodEligibility(summary.categorySlug, paymentMethod);
+  if (codError) return res.status(400).json(codError);
 
   const detailsWithRoute = summary.trackingRoute ? { ...details, trackingRoute: summary.trackingRoute } : details;
   const tracking = finalizeTrackingSpec(summary.categorySlug, detailsWithRoute);
@@ -114,6 +123,7 @@ cartRouter.post("/checkout", async (req: AuthedRequest, res) => {
         userId: req.userId!,
         type: "purchase",
         status: "confirmed",
+        paymentMethod: paymentMethod ?? "mock",
         categorySlug: summary.categorySlug,
         total: summary.total,
         items: summary.orderItems as Prisma.InputJsonValue,
@@ -142,8 +152,9 @@ cartRouter.post("/checkout/razorpay", async (req: AuthedRequest, res) => {
     });
   }
 
-  const parsed = checkoutSchema.safeParse(req.body ?? {});
+  const parsed = razorpayCheckoutSchema.safeParse(req.body ?? {});
   const details = parsed.success ? (parsed.data.details ?? {}) : {};
+  const method = (parsed.success ? parsed.data.preferredMethod : undefined) ?? "razorpay";
 
   const summary = await summarizeCart(req.userId!);
   if (!summary) return res.status(400).json({ error: "empty_cart", message: "Your cart is empty" });
@@ -155,6 +166,7 @@ cartRouter.post("/checkout/razorpay", async (req: AuthedRequest, res) => {
       userId: req.userId!,
       type: "purchase",
       status: "pending_payment",
+      paymentMethod: method,
       categorySlug: summary.categorySlug,
       total: summary.total,
       items: summary.orderItems as Prisma.InputJsonValue,
@@ -180,5 +192,6 @@ cartRouter.post("/checkout/razorpay", async (req: AuthedRequest, res) => {
     amount: summary.total,
     currency: "INR",
     keyId: getRazorpayKeyId(),
+    preferredMethod: method,
   });
 });

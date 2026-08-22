@@ -10,6 +10,7 @@ import { Cart } from "./pages/Cart";
 import { Bills } from "./pages/Bills";
 import { Orders } from "./pages/Orders";
 import { Profile } from "./pages/Profile";
+import { Tracking } from "./pages/Tracking";
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="cart" element={<Cart />} />
           <Route path="bills" element={<Bills />} />
           <Route path="orders" element={<Orders />} />
+          <Route path="tracking/:orderId" element={<Tracking />} />
           <Route path="profile" element={<Profile />} />
         </Route>
 

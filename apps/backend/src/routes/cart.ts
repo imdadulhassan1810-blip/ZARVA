@@ -7,6 +7,7 @@ import { toCartItem, toOrder } from "../lib/serialize";
 import { ensureListingExists } from "../lib/listings";
 import { sendPushNotification } from "../lib/push";
 import { razorpay, razorpayEnabled, getRazorpayKeyId } from "../lib/razorpay";
+import { finalizeTrackingSpec, resolveTrackingRoute } from "../lib/tracking";
 
 export const cartRouter = Router();
 cartRouter.use(requireAuth);
@@ -78,6 +79,8 @@ async function summarizeCart(userId: string) {
   const items = await prisma.cartItem.findMany({ where: { userId }, include: { listing: true } });
   if (items.length === 0) return null;
 
+  const foodItem = items.find((i) => i.listing.categorySlug === "food");
+
   return {
     total: items.reduce((sum, i) => sum + i.listing.price * i.quantity, 0),
     categorySlug: items[0].listing.categorySlug,
@@ -87,6 +90,9 @@ async function summarizeCart(userId: string) {
       quantity: i.quantity,
       unitPrice: i.listing.price,
     })),
+    // If any item is from Food Delivery, the order gets a simulated delivery-tracking journey
+    // from that restaurant's location — first food item wins for a mixed cart.
+    trackingRoute: foodItem ? resolveTrackingRoute("food", foodItem.listing.meta as Record<string, unknown>) : null,
   };
 }
 
@@ -99,6 +105,9 @@ cartRouter.post("/checkout", async (req: AuthedRequest, res) => {
   const summary = await summarizeCart(req.userId!);
   if (!summary) return res.status(400).json({ error: "empty_cart", message: "Your cart is empty" });
 
+  const detailsWithRoute = summary.trackingRoute ? { ...details, trackingRoute: summary.trackingRoute } : details;
+  const tracking = finalizeTrackingSpec(summary.categorySlug, detailsWithRoute);
+
   const order = await prisma.$transaction(async (tx) => {
     const created = await tx.order.create({
       data: {
@@ -108,7 +117,7 @@ cartRouter.post("/checkout", async (req: AuthedRequest, res) => {
         categorySlug: summary.categorySlug,
         total: summary.total,
         items: summary.orderItems as Prisma.InputJsonValue,
-        details: details as Prisma.InputJsonValue,
+        details: { ...detailsWithRoute, ...(tracking ? { tracking } : {}) } as Prisma.InputJsonValue,
       },
     });
     await tx.cartItem.deleteMany({ where: { userId: req.userId! } });
@@ -139,6 +148,8 @@ cartRouter.post("/checkout/razorpay", async (req: AuthedRequest, res) => {
   const summary = await summarizeCart(req.userId!);
   if (!summary) return res.status(400).json({ error: "empty_cart", message: "Your cart is empty" });
 
+  const detailsWithRoute = summary.trackingRoute ? { ...details, trackingRoute: summary.trackingRoute } : details;
+
   const order = await prisma.order.create({
     data: {
       userId: req.userId!,
@@ -147,7 +158,7 @@ cartRouter.post("/checkout/razorpay", async (req: AuthedRequest, res) => {
       categorySlug: summary.categorySlug,
       total: summary.total,
       items: summary.orderItems as Prisma.InputJsonValue,
-      details: details as Prisma.InputJsonValue,
+      details: detailsWithRoute as Prisma.InputJsonValue,
     },
   });
 
@@ -160,7 +171,7 @@ cartRouter.post("/checkout/razorpay", async (req: AuthedRequest, res) => {
 
   await prisma.order.update({
     where: { id: order.id },
-    data: { details: { ...details, razorpayOrderId: rpOrder.id } as Prisma.InputJsonValue },
+    data: { details: { ...detailsWithRoute, razorpayOrderId: rpOrder.id } as Prisma.InputJsonValue },
   });
 
   res.status(201).json({

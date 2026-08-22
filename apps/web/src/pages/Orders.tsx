@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import type { Order } from "@oneapp/shared";
 import { CATEGORY_BY_SLUG } from "@oneapp/shared";
 import { api } from "../lib/api";
@@ -59,7 +60,14 @@ export function Orders() {
             </ul>
             <div className="mt-3 pt-3 border-t flex items-center justify-between text-sm">
               <span className="text-slate-400">{new Date(order.createdAt).toLocaleString()}</span>
-              <span className="font-bold">₹{order.total.toLocaleString("en-IN")}</span>
+              <div className="flex items-center gap-3">
+                {Boolean(order.details.tracking) && (
+                  <Link to={`/tracking/${order.id}`} className="text-emerald-700 font-medium hover:underline">
+                    {order.status === "completed" ? "View trip" : "Track live 🔴"}
+                  </Link>
+                )}
+                <span className="font-bold">₹{order.total.toLocaleString("en-IN")}</span>
+              </div>
             </div>
           </div>
         );

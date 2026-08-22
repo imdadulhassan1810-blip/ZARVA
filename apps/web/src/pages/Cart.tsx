@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import type { Order } from "@oneapp/shared";
 import { useCart } from "../context/CartContext";
 import { api } from "../lib/api";
 import { PaymentActions } from "../components/PaymentActions";
@@ -9,9 +10,10 @@ export function Cart() {
 
   const total = items.reduce((sum, i) => sum + i.listing.price * i.quantity, 0);
 
-  async function handleSuccess() {
+  async function handleSuccess(order: Order) {
     await refresh();
-    navigate("/orders");
+    // Food orders get a live delivery-tracking journey — take the customer straight there.
+    navigate(order.details.tracking ? `/tracking/${order.id}` : "/orders");
   }
 
   if (items.length === 0) {

@@ -1,5 +1,6 @@
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { Order } from "@oneapp/shared";
 import type { RootStackParamList } from "../navigation/types";
 import { useCart } from "../context/CartContext";
 import { api } from "../lib/api";
@@ -13,9 +14,14 @@ export function CartScreen({ navigation }: Props) {
 
   const total = items.reduce((sum, i) => sum + i.listing.price * i.quantity, 0);
 
-  async function handleSuccess() {
+  async function handleSuccess(order: Order) {
     await refresh();
-    navigation.navigate("Orders");
+    // Food orders get a live delivery-tracking journey — take the customer straight there.
+    if (order.details.tracking) {
+      navigation.navigate("Tracking", { orderId: order.id });
+    } else {
+      navigation.navigate("Orders");
+    }
   }
 
   if (items.length === 0) {

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { Order } from "@oneapp/shared";
 import { CATEGORY_BY_SLUG } from "@oneapp/shared";
+import type { RootStackParamList } from "../navigation/types";
 import { api } from "../lib/api";
 import { colors } from "../theme";
 
@@ -11,7 +13,9 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: "#dc2626",
 };
 
-export function OrdersScreen() {
+type Props = NativeStackScreenProps<RootStackParamList, "Orders">;
+
+export function OrdersScreen({ navigation }: Props) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -63,7 +67,16 @@ export function OrdersScreen() {
             ))}
             <View style={styles.footerRow}>
               <Text style={styles.date}>{new Date(order.createdAt).toLocaleString()}</Text>
-              <Text style={styles.total}>₹{order.total.toLocaleString("en-IN")}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                {Boolean(order.details.tracking) && (
+                  <Pressable onPress={() => navigation.navigate("Tracking", { orderId: order.id })}>
+                    <Text style={styles.trackLink}>
+                      {order.status === "completed" ? "View trip" : "Track live 🔴"}
+                    </Text>
+                  </Pressable>
+                )}
+                <Text style={styles.total}>₹{order.total.toLocaleString("en-IN")}</Text>
+              </View>
             </View>
           </View>
         );
@@ -85,6 +98,7 @@ const styles = StyleSheet.create({
   footerRow: { flexDirection: "row", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8, marginTop: 4 },
   date: { fontSize: 11, color: colors.muted },
   total: { fontWeight: "800", color: colors.text },
+  trackLink: { fontSize: 12, fontWeight: "700", color: colors.success },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: colors.bg },
   emptyEmoji: { fontSize: 40 },
   emptyText: { color: colors.muted },

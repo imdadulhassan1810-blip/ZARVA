@@ -117,3 +117,46 @@ export interface RazorpayVerifyInput {
   razorpay_payment_id: string;
   razorpay_signature: string;
 }
+
+/** A priced cab fare, computed server-side from real pickup/drop coordinates + live surge. Never trust a client-supplied total. */
+export interface FareQuote {
+  distanceKm: number;
+  durationMin: number;
+  baseFare: number;
+  distanceFare: number;
+  timeFare: number;
+  subtotal: number;
+  surgeMultiplier: number;
+  total: number;
+  currency: string;
+  /** Human-readable reason for the current surge level, e.g. "Evening peak demand". */
+  surgeReason: string;
+}
+
+export type TrackingStatus =
+  | "assigned"
+  | "heading_to_pickup"
+  | "arrived_pickup"
+  | "in_progress"
+  | "completed";
+
+export interface TrackingDriver {
+  name: string;
+  phone: string;
+  vehicleNumber: string;
+  rating: number;
+  vehicleLabel: string;
+}
+
+/** Live (simulated) position of a driver/delivery partner for an order, computed from elapsed real time. */
+export interface TrackingState {
+  orderId: string;
+  status: TrackingStatus;
+  /** 0..1 across the whole journey. */
+  progress: number;
+  position: GeoPoint;
+  etaMinutes: number;
+  route: GeoPoint[];
+  driver: TrackingDriver;
+  startedAt: string;
+}

@@ -1,10 +1,31 @@
 import { Router } from "express";
 import { Prisma } from "@prisma/client";
+import type { Listing } from "@oneapp/shared";
 import { prisma } from "../lib/prisma";
 import { toListing } from "../lib/serialize";
 import { fetchOpenFoodFactsProduct, searchOpenFoodFacts } from "../providers/openFoodFacts";
+import { computeDynamicTravelPrice } from "../lib/pricing";
 
 export const listingsRouter = Router();
+
+const DYNAMIC_TRAVEL_CATEGORIES = new Set(["hotel", "flight"]);
+
+/** Hotel/flight prices are computed live (date + demand), not read straight off the seed row — see computeDynamicTravelPrice. */
+function withDynamicPrice(listing: Listing, date?: string): Listing {
+  if (!DYNAMIC_TRAVEL_CATEGORIES.has(listing.categorySlug)) return listing;
+
+  const { price, multiplier } = computeDynamicTravelPrice(
+    listing.price,
+    listing.categorySlug as "hotel" | "flight",
+    date,
+    listing.rating,
+  );
+  return {
+    ...listing,
+    price,
+    meta: { ...listing.meta, dynamicPricing: true, basePrice: listing.price, priceMultiplier: multiplier },
+  };
+}
 
 // Live provider search must be registered before "/:id" so "/live/grocery" isn't
 // swallowed by the id route (Express matches by path shape, but keep it explicit).
@@ -22,7 +43,7 @@ listingsRouter.get("/live/grocery", async (req, res) => {
 });
 
 listingsRouter.get("/", async (req, res) => {
-  const { category, query, minPrice, maxPrice, sort } = req.query as Record<string, string | undefined>;
+  const { category, query, minPrice, maxPrice, sort, date } = req.query as Record<string, string | undefined>;
 
   const where: Prisma.ListingWhereInput = {};
   if (category) where.categorySlug = category;
@@ -50,12 +71,13 @@ listingsRouter.get("/", async (req, res) => {
           : { createdAt: "desc" };
 
   const listings = await prisma.listing.findMany({ where, orderBy, take: 100 });
-  res.json(listings.map(toListing));
+  res.json(listings.map((l) => withDynamicPrice(toListing(l), date)));
 });
 
 listingsRouter.get("/:id", async (req, res) => {
+  const date = typeof req.query.date === "string" ? req.query.date : undefined;
   const listing = await prisma.listing.findUnique({ where: { id: req.params.id } });
-  if (listing) return res.json(toListing(listing));
+  if (listing) return res.json(withDynamicPrice(toListing(listing), date));
 
   // Not persisted yet — if it looks like a live-provider id, fetch it live for viewing.
   // It only gets written to our own table once it's actually added to a cart/booking.

@@ -16,6 +16,7 @@ export function CategoryScreen({ route, navigation }: Props) {
 
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [date, setDate] = useState("");
   const [query, setQuery] = useState("");
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,7 +33,7 @@ export function CategoryScreen({ route, navigation }: Props) {
     setLiveNote(null);
     try {
       const combinedQuery = category?.group === "booking" ? [from, to, query].filter(Boolean).join(" ") : query;
-      const results = await api.searchListings({ category: slug, query: combinedQuery || undefined });
+      const results = await api.searchListings({ category: slug, query: combinedQuery || undefined, date: date || undefined });
 
       // Grocery also merges in real live product data from Open Food Facts.
       if (slug === "grocery" && query.trim()) {
@@ -81,6 +82,14 @@ export function CategoryScreen({ route, navigation }: Props) {
                 onChangeText={setTo}
               />
             )}
+            {category.searchFields?.date && (
+              <TextInput
+                style={styles.input}
+                placeholder={`${category.searchFields.date} (YYYY-MM-DD)`}
+                value={date}
+                onChangeText={setDate}
+              />
+            )}
           </>
         ) : (
           <TextInput
@@ -108,7 +117,10 @@ export function CategoryScreen({ route, navigation }: Props) {
           contentContainerStyle={styles.list}
           ListEmptyComponent={<Text style={styles.empty}>No results found.</Text>}
           renderItem={({ item }) => (
-            <ListingCard listing={item} onPress={() => navigation.navigate("ListingDetail", { id: item.id })} />
+            <ListingCard
+              listing={item}
+              onPress={() => navigation.navigate("ListingDetail", { id: item.id, date: date || undefined })}
+            />
           )}
         />
       )}

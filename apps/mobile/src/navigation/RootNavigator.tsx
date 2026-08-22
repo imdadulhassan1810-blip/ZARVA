@@ -16,6 +16,7 @@ import { CartScreen } from "../screens/CartScreen";
 import { BillsScreen } from "../screens/BillsScreen";
 import { OrdersScreen } from "../screens/OrdersScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
+import { TrackingScreen } from "../screens/TrackingScreen";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -58,6 +59,7 @@ export function RootNavigator() {
         <Stack.Screen name="Cart" component={CartScreen} options={{ title: "Your cart" }} />
         <Stack.Screen name="Bills" component={BillsScreen} options={{ title: "Bill Payments" }} />
         <Stack.Screen name="Orders" component={OrdersScreen} options={{ title: "Your orders" }} />
+        <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: "Live tracking" }} />
         <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: "My profile" }} />
       </Stack.Navigator>
     </NavigationContainer>

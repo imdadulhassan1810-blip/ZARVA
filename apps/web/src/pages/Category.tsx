@@ -148,7 +148,7 @@ export function Category() {
       ) : (
         <div className="grid sm:grid-cols-2 gap-4">
           {listings.map((listing) => (
-            <ListingCard key={listing.id} listing={listing} />
+            <ListingCard key={listing.id} listing={listing} date={date || undefined} />
           ))}
         </div>
       )}

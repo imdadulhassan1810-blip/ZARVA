@@ -1,10 +1,12 @@
 import { Router } from "express";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { AuthedRequest, requireAuth } from "../middleware/auth";
 import { prisma } from "../lib/prisma";
 import { toOrder } from "../lib/serialize";
 import { getRazorpayKeyId, razorpayEnabled, verifyRazorpaySignature } from "../lib/razorpay";
 import { sendPushNotification } from "../lib/push";
+import { finalizeTrackingSpec } from "../lib/tracking";
 
 export const paymentsRouter = Router();
 
@@ -52,12 +54,19 @@ paymentsRouter.post("/razorpay/verify", requireAuth, async (req: AuthedRequest, 
   }
 
   const finalStatus = FINAL_STATUS_BY_TYPE[order.type] ?? "confirmed";
+  // The order's tracking clock only starts now, at actual confirmation — not when the
+  // (possibly abandoned) Razorpay order was first created.
+  const tracking = finalizeTrackingSpec(order.categorySlug, details);
   const updated = await prisma.$transaction(async (tx) => {
     const result = await tx.order.update({
       where: { id: order.id },
       data: {
         status: finalStatus,
-        details: { ...details, razorpayPaymentId: razorpay_payment_id },
+        details: {
+          ...details,
+          razorpayPaymentId: razorpay_payment_id,
+          ...(tracking ? { tracking } : {}),
+        } as unknown as Prisma.InputJsonValue,
       },
     });
     if (order.type === "purchase") {

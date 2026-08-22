@@ -2,6 +2,7 @@ import type {
   AuthResponse,
   Bill,
   CartItem,
+  FareQuote,
   GeoPoint,
   Listing,
   ListingSearchQuery,
@@ -9,6 +10,7 @@ import type {
   RazorpayCheckoutInfo,
   RazorpayConfig,
   RazorpayVerifyInput,
+  TrackingState,
   User,
 } from "./types";
 
@@ -103,8 +105,10 @@ export class ApiClient {
     return this.request<Listing[]>(`/api/listings?${params.toString()}`, { auth: false });
   }
 
-  async getListing(id: string) {
-    return this.request<Listing>(`/api/listings/${id}`, { auth: false });
+  /** `date` refines dynamic pricing for hotels/flights (e.g. the check-in/departure date picked in search); omit to price for today. */
+  async getListing(id: string, date?: string) {
+    const q = date ? `?date=${encodeURIComponent(date)}` : "";
+    return this.request<Listing>(`/api/listings/${id}${q}`, { auth: false });
   }
 
   /** Live product search against a real external catalog (currently: grocery via Open Food Facts). No local seed data involved. */
@@ -205,5 +209,16 @@ export class ApiClient {
   // --- Orders ---
   async listOrders() {
     return this.request<Order[]>("/api/orders");
+  }
+
+  // --- Dynamic cab pricing ---
+  /** Real distance/time/surge-based fare for a specific vehicle + pickup/drop. Recomputed server-side at booking time too — never trust this for anything but display. */
+  async quoteCabFare(input: { listingId: string; pickup: GeoPoint; drop: GeoPoint }) {
+    return this.request<FareQuote>("/api/cabs/quote", { method: "POST", body: input, auth: false });
+  }
+
+  // --- Live tracking (cab / food / home services) ---
+  async getTracking(orderId: string) {
+    return this.request<TrackingState>(`/api/tracking/${orderId}`);
   }
 }

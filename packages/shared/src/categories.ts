@@ -72,6 +72,22 @@ export const CATEGORIES: CategoryDef[] = [
     searchFields: { to: "Delivery address", extra: "Cylinder type" },
   },
   {
+    slug: "movies",
+    name: "Movies & Events",
+    icon: "🎬",
+    group: "booking",
+    description: "Book tickets for movies, concerts & events.",
+    searchFields: { to: "City", date: "Date", extra: "Language / genre" },
+  },
+  {
+    slug: "homeservices",
+    name: "Home Services",
+    icon: "🧰",
+    group: "booking",
+    description: "Book a plumber, electrician, cleaner, salon-at-home & more.",
+    searchFields: { to: "Your area", date: "Preferred date", extra: "Service type" },
+  },
+  {
     slug: "grocery",
     name: "Grocery",
     icon: "🛒",
@@ -100,6 +116,20 @@ export const CATEGORIES: CategoryDef[] = [
     description: "Fashion for everyone.",
   },
   {
+    slug: "food",
+    name: "Food Delivery",
+    icon: "🍔",
+    group: "shop",
+    description: "Order from your favourite restaurants.",
+  },
+  {
+    slug: "pharmacy",
+    name: "Pharmacy",
+    icon: "💊",
+    group: "shop",
+    description: "Medicines & healthcare, delivered.",
+  },
+  {
     slug: "bills",
     name: "Bill Payments",
     icon: "🧾",
@@ -116,6 +146,12 @@ export const BOOKING_CATEGORY_SLUGS = CATEGORIES.filter((c) => c.group === "book
   (c) => c.slug,
 );
 export const SHOP_CATEGORY_SLUGS = CATEGORIES.filter((c) => c.group === "shop").map((c) => c.slug);
+
+/** Categories where an order gets a simulated live-tracking journey (a moving driver/partner, ETA, status). */
+export const TRACKABLE_CATEGORY_SLUGS = ["cab", "food", "homeservices"];
+
+/** Categories whose listing price is computed dynamically (distance/demand/date) rather than a fixed seed price. */
+export const DYNAMIC_PRICING_CATEGORY_SLUGS = ["cab", "hotel", "flight"];
 
 export const BILLER_TYPES = [
   { slug: "electricity", name: "Electricity", icon: "💡" },

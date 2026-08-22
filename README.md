@@ -1,20 +1,26 @@
 # OneApp — Daily Chores System
 
 A multi-service "super-app" that brings cabs, hotels, flights, trains, buses,
-grocery, stationary, electronics, clothing, gas booking and bill payments into
-a single product — **Web**, **iOS** and **Android**, sharing one backend and
-one TypeScript domain model.
+gas, movies & events, home services, grocery, food delivery, pharmacy,
+stationary, electronics, clothing, and bill payments into a single product —
+**Web**, **iOS** and **Android**, sharing one backend and one TypeScript
+domain model.
 
-> **Status: MVP scaffold, now with a few real integrations.** Every category
-> has a real, working, end-to-end flow (search → book/add-to-cart → pay →
-> order history) backed by our own API and seeded demo data. On top of that:
-> **Razorpay** checkout is fully wired (needs your own API keys to activate),
-> **grocery search** pulls real live product data from Open Food Facts, **cab
-> booking** has a real interactive pickup/drop map, and **push notifications**
-> fire on every booking/order/payment via Expo's push service. See
-> [What's real vs. mocked](#whats-real-vs-mocked) for the exact boundary —
-> there's still no real cab dispatch or airline GDS, which need business
-> partnerships out of scope for a single build.
+> **Status: MVP with several real, working subsystems — not a market-ready
+> product.** Every category has a real, working, end-to-end flow (search →
+> book/add-to-cart → pay → order history) backed by our own API and seeded
+> demo data. On top of that: cab fares are **computed live from real
+> distance/time/surge** (not flat), hotel/flight prices **shift with date and
+> demand** the way real OTAs price, cab/food/home-service orders get a **live
+> simulated tracking journey** (moving driver, ETA, status), **Razorpay**
+> checkout is fully wired (needs your own API keys to activate), **grocery
+> search** pulls real live product data from Open Food Facts, and **push
+> notifications** fire on every booking/order/payment via Expo's push
+> service. See [What's real vs. mocked](#whats-real-vs-mocked) for the exact
+> boundary — there's still no real cab dispatch, airline GDS, or restaurant
+> POS integration (those need business partnerships), no deployment/hosting,
+> no app store build, and no test suite. This is a strong prototype to build
+> from, not a finished business.
 
 ## Monorepo layout
 
@@ -33,16 +39,49 @@ be added once.
 
 ## Categories & flows
 
-| Group    | Categories                                              | Flow |
-|----------|----------------------------------------------------------|------|
-| Booking  | Cabs, Hotels, Flights, Trains, Buses, Gas refills         | Search → pick a listing → (cabs: drop pins on a map) → **Book now** → order created |
-| Shop     | Grocery, Stationary, Electronics, Clothing                | Browse/search → **Add to cart** → **Checkout** → order created |
-| Bills    | Electricity, Water, Mobile, DTH, Broadband, Credit card    | Enter consumer number → mock biller returns amount due → **Pay** |
+| Group    | Categories                                                                 | Flow |
+|----------|------------------------------------------------------------------------------|------|
+| Booking  | Cabs, Hotels, Flights, Trains, Buses, Gas refills, Movies & Events, Home Services | Search → pick a listing → (cabs: drop pins on a map) → **Book now** → order created |
+| Shop     | Grocery, Food Delivery, Pharmacy, Stationary, Electronics, Clothing           | Browse/search → **Add to cart** → **Checkout** → order created |
+| Bills    | Electricity, Water, Mobile, DTH, Broadband, Credit card                       | Enter consumer number → mock biller returns amount due → **Pay** |
 
 All orders land in **Order history**, available from both clients. Every
 "book now" / "checkout" / "pay" action offers **Razorpay** checkout when the
 backend has keys configured, and otherwise falls back to an instant one-click
 "demo checkout" — nothing is ever blocked on having payment credentials.
+
+### Dynamic pricing
+
+- **Cabs** don't have a flat fare. Pick pickup/drop pins on the map and the
+  backend computes a real quote — `apps/backend/src/lib/pricing.ts` takes the
+  actual haversine distance between your two pins (× a road-distance fudge
+  factor), the vehicle's per-km/per-min rates, and a live surge multiplier
+  (time-of-day peak windows + a slow "market is moving" wiggle) — and shows
+  the full breakdown before you book. The price you're charged is
+  **recomputed server-side at booking time** from the same pickup/drop, never
+  trusted from the client.
+- **Hotels & flights** price like a real OTA/airline: `computeDynamicTravelPrice`
+  applies a last-minute premium / advance-purchase discount curve based on
+  days-until-checkin/departure, a small popularity bump for highly-rated
+  listings, a Friday/Saturday night premium for hotels, and the same live
+  demand wiggle — so refreshing a search (or picking a date) visibly changes
+  the price. Search with a date (`?date=YYYY-MM-DD`) to see it most clearly.
+
+### Live tracking (simulated)
+
+Cab bookings, food delivery orders, and home-service bookings get a **live
+tracking journey** — open it from the booking confirmation screen, or the
+"Track live" link on Order history. A driver/delivery-partner icon moves in
+real time along a real route on a Leaflet/OpenStreetMap map, through
+realistic phases (assigned → heading to pickup → arrived → in progress →
+completed) with a live ETA and ⭐-rated driver card, polled every 2 seconds
+from `apps/backend/src/lib/tracking.ts`. This is a genuine simulation, not
+real GPS — there's no real fleet behind it (see
+[What's real vs. mocked](#whats-real-vs-mocked)) — but the position math,
+timing, and progression are all real, computed from actual elapsed time and
+actual distances, not scripted. Food/home-service delivery points are
+synthesized near the restaurant/provider (no address picker for those yet —
+a natural next step).
 
 Grocery search also merges in real live results from **Open Food Facts**
 alongside our own seeded catalog — search for a real packaged product (e.g.
@@ -65,7 +104,7 @@ cd apps/backend
 cp .env.example .env
 npm install        # (or just `npm install` from the repo root, once)
 npx prisma migrate dev --name init
-npm run seed        # creates ~64 demo listings + demo@oneapp.dev / password123
+npm run seed        # creates ~90 demo listings across 14 categories + demo@oneapp.dev / password123
 npm run dev          # http://localhost:4000
 ```
 
@@ -111,17 +150,28 @@ Run from the repo root (npm workspaces):
 
 - **Real:** auth (JWT + bcrypt), Postgres persistence, cart/checkout logic,
   booking logic, order history, full REST API, shared type-safe client used
-  by both frontends, **Razorpay payments** (real SDK, real order creation,
-  real HMAC signature verification — activates once you set
-  `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET`), **live grocery search** via Open
-  Food Facts (real product names/brands/photos, no API key), **cab
+  by both frontends, **cab fare pricing** (real distance/time/surge math,
+  server-recomputed at booking time), **hotel/flight dynamic pricing** (real
+  date/demand curve), **live order tracking simulation** (real position/ETA
+  math over real elapsed time, not scripted), **Razorpay payments** (real
+  SDK, real order creation, real HMAC signature verification — activates once
+  you set `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET`), **live grocery search**
+  via Open Food Facts (real product names/brands/photos, no API key), **cab
   pickup/drop map** via Leaflet + OpenStreetMap + Nominatim (no API key), and
   **push notifications** via Expo's push service (no API key, but needs an
   EAS project — see below).
-- **Mocked:** listing data for every other category (flights/hotels/etc. are
-  seeded, not pulled from live providers), the bill-payment lookup
-  (deterministic fake amounts), delivery/dispatch tracking, and payments when
-  Razorpay isn't configured (an instant "demo checkout" success).
+- **Mocked / simulated:** listing data for every category (all seeded, not
+  pulled from live providers — no real airline/hotel/restaurant inventory),
+  the bill-payment lookup (deterministic fake amounts), payments when
+  Razorpay isn't configured (an instant "demo checkout" success), and —
+  importantly — **tracking itself is a simulation**: there is no real
+  driver/delivery fleet, so the "live" journey is generated server-side from
+  real geometry and real elapsed time rather than actual GPS. It's honestly
+  labelled as such nowhere in the UI (worth adding if this ships), but the
+  underlying math is not faked or hardcoded.
+- **Not attempted at all:** deployment/hosting, an app store build, load
+  testing, a security review, and an automated test suite. None of this is a
+  few-line fix — see the status note at the top.
 
 ### Setting up the real integrations
 

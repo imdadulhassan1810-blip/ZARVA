@@ -1,0 +1,23 @@
+{
+  "name": "daily-chores-system",
+  "private": true,
+  "version": "0.1.0",
+  "description": "OneApp - a multi-service aggregator platform (cab, hotel, flights, trains, buses, grocery, stationary, electronics, clothing, gas, bill payments) with Web, iOS and Android clients.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=apps/backend",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:mobile": "npm run start --workspace=apps/mobile",
+    "build:shared": "npm run build --workspace=packages/shared",
+    "build:backend": "npm run build --workspace=apps/backend",
+    "build:web": "npm run build --workspace=apps/web",
+    "typecheck": "npm run typecheck --workspace=packages/shared && npm run typecheck --workspace=apps/backend && npm run typecheck --workspace=apps/web && npm run typecheck --workspace=apps/mobile",
+    "seed": "npm run seed --workspace=apps/backend"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

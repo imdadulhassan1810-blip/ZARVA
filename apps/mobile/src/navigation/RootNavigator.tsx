@@ -32,6 +32,11 @@ function HeaderRight({ navigation }: { navigation: NavProp }) {
       <Pressable onPress={() => navigation.navigate("Cart")} style={{ flexDirection: "row", gap: 2 }}>
         <Text style={{ color: "#fff", fontSize: 13 }}>🛒{count > 0 ? ` ${count}` : ""}</Text>
       </Pressable>
+      {!user && (
+        <Pressable onPress={() => navigation.navigate("Register")}>
+          <Text style={{ color: "#fff", fontSize: 13 }}>Sign up</Text>
+        </Pressable>
+      )}
       <Pressable onPress={() => navigation.navigate(user ? "Profile" : "Login")}>
         <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>
           {user ? user.name.split(" ")[0] : "Log in"}

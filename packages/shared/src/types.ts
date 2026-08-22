@@ -23,6 +23,8 @@ export interface Listing {
   title: string;
   subtitle?: string | null;
   imageEmoji: string;
+  /** A real product photo URL, when the listing comes from a live provider (e.g. grocery). Falls back to imageEmoji when absent. */
+  imageUrl?: string | null;
   price: number;
   /** e.g. "per night", "per seat", "per kg", "flat fare" */
   priceUnit: string;
@@ -31,6 +33,8 @@ export interface Listing {
   tags: string[];
   /** Free-form category-specific details (duration, stops, room type, brand, size options, etc.) */
   meta: Record<string, unknown>;
+  /** Set when this listing was fetched live from an external provider rather than our own seeded catalog. */
+  source?: string;
 }
 
 export interface ListingSearchQuery {
@@ -61,7 +65,8 @@ export interface Bill {
 }
 
 export type OrderType = "booking" | "purchase" | "bill_payment";
-export type OrderStatus = "confirmed" | "completed" | "cancelled";
+export type OrderStatus = "pending_payment" | "confirmed" | "completed" | "cancelled";
+export type PaymentMethod = "mock" | "razorpay";
 
 export interface OrderItem {
   listingTitle: string;
@@ -85,4 +90,30 @@ export interface Order {
 export interface ApiError {
   error: string;
   message: string;
+}
+
+export interface GeoPoint {
+  lat: number;
+  lng: number;
+  address?: string;
+}
+
+export interface RazorpayConfig {
+  enabled: boolean;
+  keyId?: string;
+}
+
+export interface RazorpayCheckoutInfo {
+  order: Order;
+  razorpayOrderId: string;
+  amount: number;
+  currency: string;
+  keyId: string;
+}
+
+export interface RazorpayVerifyInput {
+  orderId: string;
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
 }

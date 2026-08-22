@@ -1,28 +1,17 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { api } from "../lib/api";
+import { PaymentActions } from "../components/PaymentActions";
 
 export function Cart() {
   const { items, updateQuantity, removeItem, refresh } = useCart();
   const navigate = useNavigate();
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const total = items.reduce((sum, i) => sum + i.listing.price * i.quantity, 0);
 
-  async function checkout() {
-    setSubmitting(true);
-    setError(null);
-    try {
-      const order = await api.checkoutCart();
-      await refresh();
-      navigate("/orders", { state: { justPlaced: order.id } });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Checkout failed");
-    } finally {
-      setSubmitting(false);
-    }
+  async function handleSuccess() {
+    await refresh();
+    navigate("/orders");
   }
 
   if (items.length === 0) {
@@ -81,15 +70,12 @@ export function Cart() {
         <span className="text-xl font-bold">₹{total.toLocaleString("en-IN")}</span>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
-
-      <button
-        onClick={checkout}
-        disabled={submitting}
-        className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white rounded-md py-3 font-semibold"
-      >
-        {submitting ? "Placing order…" : "Checkout"}
-      </button>
+      <PaymentActions
+        label="Checkout"
+        onMockPay={() => api.checkoutCart()}
+        onRazorpayInit={() => api.checkoutCartWithRazorpay()}
+        onSuccess={handleSuccess}
+      />
     </div>
   );
 }

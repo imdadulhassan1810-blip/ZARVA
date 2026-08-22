@@ -5,14 +5,16 @@ grocery, stationary, electronics, clothing, gas booking and bill payments into
 a single product — **Web**, **iOS** and **Android**, sharing one backend and
 one TypeScript domain model.
 
-> **Status: MVP scaffold.** Every category has a real, working, end-to-end
-> flow (search → book/add-to-cart → pay → order history) backed by our own
-> API and seeded demo data. There are no live third-party integrations yet
-> (no real cab dispatch, airline GDS, payment gateway, etc.) — those require
-> business partnerships and provider API keys that are out of scope for a
-> single build. The architecture is designed so each category's mock data
-> source can be swapped for a real provider integration behind the same API
-> shape.
+> **Status: MVP scaffold, now with a few real integrations.** Every category
+> has a real, working, end-to-end flow (search → book/add-to-cart → pay →
+> order history) backed by our own API and seeded demo data. On top of that:
+> **Razorpay** checkout is fully wired (needs your own API keys to activate),
+> **grocery search** pulls real live product data from Open Food Facts, **cab
+> booking** has a real interactive pickup/drop map, and **push notifications**
+> fire on every booking/order/payment via Expo's push service. See
+> [What's real vs. mocked](#whats-real-vs-mocked) for the exact boundary —
+> there's still no real cab dispatch or airline GDS, which need business
+> partnerships out of scope for a single build.
 
 ## Monorepo layout
 
@@ -33,11 +35,23 @@ be added once.
 
 | Group    | Categories                                              | Flow |
 |----------|----------------------------------------------------------|------|
-| Booking  | Cabs, Hotels, Flights, Trains, Buses, Gas refills         | Search → pick a listing → **Book now** → order created immediately |
+| Booking  | Cabs, Hotels, Flights, Trains, Buses, Gas refills         | Search → pick a listing → (cabs: drop pins on a map) → **Book now** → order created |
 | Shop     | Grocery, Stationary, Electronics, Clothing                | Browse/search → **Add to cart** → **Checkout** → order created |
 | Bills    | Electricity, Water, Mobile, DTH, Broadband, Credit card    | Enter consumer number → mock biller returns amount due → **Pay** |
 
-All orders land in **Order history**, available from both clients.
+All orders land in **Order history**, available from both clients. Every
+"book now" / "checkout" / "pay" action offers **Razorpay** checkout when the
+backend has keys configured, and otherwise falls back to an instant one-click
+"demo checkout" — nothing is ever blocked on having payment credentials.
+
+Grocery search also merges in real live results from **Open Food Facts**
+alongside our own seeded catalog — search for a real packaged product (e.g.
+"nutella", "oreo", "lays") to see it. Cab bookings show a real Leaflet +
+OpenStreetMap picker to drop pickup/drop pins (no API key required), reverse-
+geocoded to an address via OpenStreetMap's Nominatim service. On mobile, a
+booking/order/bill-payment confirmation also fires a real push notification
+via Expo's push service once you've logged in and granted notification
+permission.
 
 ## Getting started
 
@@ -96,16 +110,52 @@ Run from the repo root (npm workspaces):
 ## What's real vs. mocked
 
 - **Real:** auth (JWT + bcrypt), Postgres persistence, cart/checkout logic,
-  booking logic, order history, a deterministic mock "biller" lookup, full
-  REST API, shared type-safe client used by both frontends.
-- **Mocked:** listing data (flights/hotels/cabs/etc. are seeded, not pulled
-  from live providers), payments (checkout/pay always "succeeds" — no card
-  processor is wired in), delivery/dispatch tracking.
+  booking logic, order history, full REST API, shared type-safe client used
+  by both frontends, **Razorpay payments** (real SDK, real order creation,
+  real HMAC signature verification — activates once you set
+  `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET`), **live grocery search** via Open
+  Food Facts (real product names/brands/photos, no API key), **cab
+  pickup/drop map** via Leaflet + OpenStreetMap + Nominatim (no API key), and
+  **push notifications** via Expo's push service (no API key, but needs an
+  EAS project — see below).
+- **Mocked:** listing data for every other category (flights/hotels/etc. are
+  seeded, not pulled from live providers), the bill-payment lookup
+  (deterministic fake amounts), delivery/dispatch tracking, and payments when
+  Razorpay isn't configured (an instant "demo checkout" success).
+
+### Setting up the real integrations
+
+- **Razorpay:** get test keys from your
+  [Razorpay dashboard](https://dashboard.razorpay.com/app/keys) and set
+  `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` in `apps/backend/.env`. Without
+  them, every checkout/booking/bill-pay button falls back to the demo flow —
+  the app is fully usable either way.
+- **Push notifications (mobile):** Expo's push service needs an EAS project
+  id to mint tokens. Run `npx eas init` inside `apps/mobile` (creates a free
+  Expo account project) and it wires up `extra.eas.projectId` in
+  `app.json` automatically. Without it, notification registration silently
+  no-ops — nothing breaks, you just won't get pushes.
+- **Grocery live search & cab maps:** work out of the box, no setup — they
+  call Open Food Facts / OpenStreetMap directly with no API key.
+
+> **A note on this repo's own build sandbox:** the environment this was
+> built in blocks outbound requests to arbitrary internet hosts (only npm,
+> GitHub, etc. are allowlisted), so `world.openfoodfacts.org`,
+> `nominatim.openstreetmap.org`, `tile.openstreetmap.org`,
+> `checkout.razorpay.com` and `exp.host` could not be reached to live-test
+> those calls end-to-end from inside that sandbox. Every one of those code
+> paths was verified for correct request shape, and — for the network calls
+> that could reach the blocked hosts — the graceful fallback UI (e.g. "Live
+> product search is temporarily unavailable") was confirmed working. Run it
+> anywhere with normal internet access (your machine, CI, a real server) and
+> these should work live; if something doesn't, it's worth a bug report.
 
 ## Extending to a real provider
 
 Each category's listings are just rows in the `Listing` table with a
 `categorySlug` and a free-form `meta` JSON blob. To wire in a real provider
-(e.g. a flight GDS or a payment gateway), replace the seed data / mock lookup
-in `apps/backend/src/routes/*.ts` with a call to that provider's API, keeping
-the same `Listing` / `Order` shape so neither frontend needs to change.
+(e.g. a flight GDS), replace the seed data / mock lookup in
+`apps/backend/src/routes/*.ts` and `apps/backend/src/providers/*.ts` with a
+call to that provider's API, keeping the same `Listing` / `Order` shape so
+neither frontend needs to change — `apps/backend/src/providers/openFoodFacts.ts`
+is a worked example of exactly this pattern.

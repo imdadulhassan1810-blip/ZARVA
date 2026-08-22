@@ -2,13 +2,13 @@ import { FormEvent, useState } from "react";
 import { BILLER_TYPES } from "@oneapp/shared";
 import type { Bill } from "@oneapp/shared";
 import { api } from "../lib/api";
+import { PaymentActions } from "../components/PaymentActions";
 
 export function Bills() {
   const [billerType, setBillerType] = useState<string>(BILLER_TYPES[0].slug);
   const [consumerNumber, setConsumerNumber] = useState("");
   const [bill, setBill] = useState<Bill | null>(null);
   const [loading, setLoading] = useState(false);
-  const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paid, setPaid] = useState(false);
 
@@ -24,25 +24,6 @@ export function Bills() {
       setError(err instanceof Error ? err.message : "Lookup failed");
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function onPay() {
-    if (!bill) return;
-    setPaying(true);
-    setError(null);
-    try {
-      await api.payBill({
-        billerType: bill.billerType,
-        billerName: bill.billerName,
-        consumerNumber: bill.consumerNumber,
-        amount: bill.amountDue,
-      });
-      setPaid(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Payment failed");
-    } finally {
-      setPaying(false);
     }
   }
 
@@ -115,13 +96,26 @@ export function Bills() {
           {paid ? (
             <p className="text-center text-green-700 font-medium">✅ Payment successful!</p>
           ) : (
-            <button
-              onClick={onPay}
-              disabled={paying}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-md py-2 font-semibold"
-            >
-              {paying ? "Paying…" : `Pay ₹${bill.amountDue.toLocaleString("en-IN")}`}
-            </button>
+            <PaymentActions
+              label={`Pay ₹${bill.amountDue.toLocaleString("en-IN")}`}
+              onMockPay={() =>
+                api.payBill({
+                  billerType: bill.billerType,
+                  billerName: bill.billerName,
+                  consumerNumber: bill.consumerNumber,
+                  amount: bill.amountDue,
+                })
+              }
+              onRazorpayInit={() =>
+                api.payBillWithRazorpay({
+                  billerType: bill.billerType,
+                  billerName: bill.billerName,
+                  consumerNumber: bill.consumerNumber,
+                  amount: bill.amountDue,
+                })
+              }
+              onSuccess={() => setPaid(true)}
+            />
           )}
         </div>
       )}

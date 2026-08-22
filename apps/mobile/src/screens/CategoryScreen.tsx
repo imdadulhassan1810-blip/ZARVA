@@ -20,6 +20,7 @@ export function CategoryScreen({ route, navigation }: Props) {
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [liveNote, setLiveNote] = useState<string | null>(null);
 
   useEffect(() => {
     navigation.setOptions({ title: category ? `${category.icon} ${category.name}` : "Category" });
@@ -28,10 +29,23 @@ export function CategoryScreen({ route, navigation }: Props) {
   async function runSearch() {
     setLoading(true);
     setError(null);
+    setLiveNote(null);
     try {
       const combinedQuery = category?.group === "booking" ? [from, to, query].filter(Boolean).join(" ") : query;
       const results = await api.searchListings({ category: slug, query: combinedQuery || undefined });
-      setListings(results);
+
+      // Grocery also merges in real live product data from Open Food Facts.
+      if (slug === "grocery" && query.trim()) {
+        try {
+          const live = await api.searchLiveGrocery(query.trim());
+          setListings([...results, ...live]);
+        } catch {
+          setListings(results);
+          setLiveNote("Live product search is temporarily unavailable — showing our catalog only.");
+        }
+      } else {
+        setListings(results);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
@@ -81,6 +95,8 @@ export function CategoryScreen({ route, navigation }: Props) {
         </Pressable>
       </View>
 
+      {liveNote ? <Text style={styles.liveNote}>{liveNote}</Text> : null}
+
       {loading ? (
         <ActivityIndicator style={styles.loading} color={colors.brand} />
       ) : error ? (
@@ -128,6 +144,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   searchButtonText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  liveNote: { fontSize: 12, color: "#92400e", backgroundColor: "#fffbeb", padding: 10, marginHorizontal: 16, marginTop: 12, borderRadius: 8 },
   list: { padding: 16, gap: 10 },
   loading: { marginTop: 40 },
   error: { color: colors.danger, textAlign: "center", marginTop: 40 },

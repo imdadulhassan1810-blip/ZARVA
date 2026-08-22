@@ -4,6 +4,9 @@ import { z } from "zod";
 import { AuthedRequest, requireAuth } from "../middleware/auth";
 import { prisma } from "../lib/prisma";
 import { toCartItem, toOrder } from "../lib/serialize";
+import { ensureListingExists } from "../lib/listings";
+import { sendPushNotification } from "../lib/push";
+import { razorpay, razorpayEnabled, getRazorpayKeyId } from "../lib/razorpay";
 
 export const cartRouter = Router();
 cartRouter.use(requireAuth);
@@ -33,13 +36,13 @@ cartRouter.post("/", async (req: AuthedRequest, res) => {
   }
   const { listingId, quantity } = parsed.data;
 
-  const listing = await prisma.listing.findUnique({ where: { id: listingId } });
+  const listing = await ensureListingExists(listingId);
   if (!listing) return res.status(404).json({ error: "not_found", message: "Listing not found" });
 
   await prisma.cartItem.upsert({
-    where: { userId_listingId: { userId: req.userId!, listingId } },
+    where: { userId_listingId: { userId: req.userId!, listingId: listing.id } },
     update: { quantity: { increment: quantity } },
-    create: { userId: req.userId!, listingId, quantity },
+    create: { userId: req.userId!, listingId: listing.id, quantity },
   });
 
   res.status(201).json(await currentCart(req.userId!));
@@ -71,28 +74,30 @@ cartRouter.delete("/:itemId", async (req: AuthedRequest, res) => {
   res.json(await currentCart(req.userId!));
 });
 
+async function summarizeCart(userId: string) {
+  const items = await prisma.cartItem.findMany({ where: { userId }, include: { listing: true } });
+  if (items.length === 0) return null;
+
+  return {
+    total: items.reduce((sum, i) => sum + i.listing.price * i.quantity, 0),
+    categorySlug: items[0].listing.categorySlug,
+    orderItems: items.map((i) => ({
+      listingTitle: i.listing.title,
+      categorySlug: i.listing.categorySlug,
+      quantity: i.quantity,
+      unitPrice: i.listing.price,
+    })),
+  };
+}
+
 const checkoutSchema = z.object({ details: z.record(z.unknown()).optional() });
 
 cartRouter.post("/checkout", async (req: AuthedRequest, res) => {
   const parsed = checkoutSchema.safeParse(req.body ?? {});
   const details = parsed.success ? (parsed.data.details ?? {}) : {};
 
-  const items = await prisma.cartItem.findMany({
-    where: { userId: req.userId! },
-    include: { listing: true },
-  });
-  if (items.length === 0) {
-    return res.status(400).json({ error: "empty_cart", message: "Your cart is empty" });
-  }
-
-  const total = items.reduce((sum, i) => sum + i.listing.price * i.quantity, 0);
-  const categorySlug = items[0].listing.categorySlug;
-  const orderItems = items.map((i) => ({
-    listingTitle: i.listing.title,
-    categorySlug: i.listing.categorySlug,
-    quantity: i.quantity,
-    unitPrice: i.listing.price,
-  }));
+  const summary = await summarizeCart(req.userId!);
+  if (!summary) return res.status(400).json({ error: "empty_cart", message: "Your cart is empty" });
 
   const order = await prisma.$transaction(async (tx) => {
     const created = await tx.order.create({
@@ -100,9 +105,9 @@ cartRouter.post("/checkout", async (req: AuthedRequest, res) => {
         userId: req.userId!,
         type: "purchase",
         status: "confirmed",
-        categorySlug,
-        total,
-        items: orderItems as Prisma.InputJsonValue,
+        categorySlug: summary.categorySlug,
+        total: summary.total,
+        items: summary.orderItems as Prisma.InputJsonValue,
         details: details as Prisma.InputJsonValue,
       },
     });
@@ -110,5 +115,59 @@ cartRouter.post("/checkout", async (req: AuthedRequest, res) => {
     return created;
   });
 
+  const user = await prisma.user.findUnique({ where: { id: req.userId! } });
+  await sendPushNotification(user?.pushToken, {
+    title: "Order confirmed 🎉",
+    body: `Your ₹${summary.total.toLocaleString("en-IN")} order is on its way.`,
+    data: { orderId: order.id },
+  });
+
   res.status(201).json(toOrder(order));
+});
+
+cartRouter.post("/checkout/razorpay", async (req: AuthedRequest, res) => {
+  if (!razorpayEnabled || !razorpay) {
+    return res.status(501).json({
+      error: "razorpay_not_configured",
+      message: "Razorpay isn't configured on this server. Set RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET, or use the standard checkout instead.",
+    });
+  }
+
+  const parsed = checkoutSchema.safeParse(req.body ?? {});
+  const details = parsed.success ? (parsed.data.details ?? {}) : {};
+
+  const summary = await summarizeCart(req.userId!);
+  if (!summary) return res.status(400).json({ error: "empty_cart", message: "Your cart is empty" });
+
+  const order = await prisma.order.create({
+    data: {
+      userId: req.userId!,
+      type: "purchase",
+      status: "pending_payment",
+      categorySlug: summary.categorySlug,
+      total: summary.total,
+      items: summary.orderItems as Prisma.InputJsonValue,
+      details: details as Prisma.InputJsonValue,
+    },
+  });
+
+  const rpOrder = await razorpay.orders.create({
+    amount: Math.round(summary.total * 100),
+    currency: "INR",
+    receipt: order.id,
+    notes: { oneappOrderId: order.id },
+  });
+
+  await prisma.order.update({
+    where: { id: order.id },
+    data: { details: { ...details, razorpayOrderId: rpOrder.id } as Prisma.InputJsonValue },
+  });
+
+  res.status(201).json({
+    order: toOrder(order),
+    razorpayOrderId: rpOrder.id,
+    amount: summary.total,
+    currency: "INR",
+    keyId: getRazorpayKeyId(),
+  });
 });

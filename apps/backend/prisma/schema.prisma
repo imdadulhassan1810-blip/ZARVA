@@ -13,6 +13,9 @@ model User {
   email        String     @unique
   passwordHash String
   phone        String?
+  /// Expo push token for this user's mobile device, if they've granted notification
+  /// permission. Nullable — web users and users who haven't opted in have none.
+  pushToken    String?
   createdAt    DateTime   @default(now())
   cartItems    CartItem[]
   orders       Order[]
@@ -24,12 +27,17 @@ model Listing {
   title        String
   subtitle     String?
   imageEmoji   String
+  /// Real product photo URL, set only for listings pulled in from a live provider.
+  imageUrl     String?
   price        Float
   priceUnit    String
   rating       Float?
   location     String?
   tags         String[]
   meta         Json       @default("{}")
+  /// Set when this row was persisted from a live external provider (e.g. "openfoodfacts")
+  /// rather than our own seed data.
+  source       String?
   createdAt    DateTime   @default(now())
   cartItems    CartItem[]
 

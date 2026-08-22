@@ -1,9 +1,12 @@
 import { Router } from "express";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { BILLER_TYPES } from "@oneapp/shared";
 import { AuthedRequest, requireAuth } from "../middleware/auth";
 import { prisma } from "../lib/prisma";
 import { toOrder } from "../lib/serialize";
+import { sendPushNotification } from "../lib/push";
+import { razorpay, razorpayEnabled, getRazorpayKeyId } from "../lib/razorpay";
 
 export const billsRouter = Router();
 billsRouter.use(requireAuth);
@@ -89,5 +92,66 @@ billsRouter.post("/pay", async (req: AuthedRequest, res) => {
     },
   });
 
+  const user = await prisma.user.findUnique({ where: { id: req.userId! } });
+  await sendPushNotification(user?.pushToken, {
+    title: "Bill paid 🧾",
+    body: `${billerName} bill of ₹${amount.toLocaleString("en-IN")} paid successfully.`,
+    data: { orderId: order.id },
+  });
+
   res.status(201).json(toOrder(order));
+});
+
+billsRouter.post("/pay/razorpay", async (req: AuthedRequest, res) => {
+  if (!razorpayEnabled || !razorpay) {
+    return res.status(501).json({
+      error: "razorpay_not_configured",
+      message: "Razorpay isn't configured on this server. Set RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET, or use the standard payment instead.",
+    });
+  }
+
+  const parsed = paySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_input", message: "billerType, billerName, consumerNumber and amount are required" });
+  }
+  const { billerType, billerName, consumerNumber, amount } = parsed.data;
+
+  const order = await prisma.order.create({
+    data: {
+      userId: req.userId!,
+      type: "bill_payment",
+      status: "pending_payment",
+      categorySlug: "bills",
+      total: amount,
+      items: [
+        {
+          listingTitle: `${billerName} bill (${consumerNumber})`,
+          categorySlug: "bills",
+          quantity: 1,
+          unitPrice: amount,
+        },
+      ] as Prisma.InputJsonValue,
+      details: { billerType, billerName, consumerNumber } as Prisma.InputJsonValue,
+    },
+  });
+
+  const rpOrder = await razorpay.orders.create({
+    amount: Math.round(amount * 100),
+    currency: "INR",
+    receipt: order.id,
+    notes: { oneappOrderId: order.id },
+  });
+
+  await prisma.order.update({
+    where: { id: order.id },
+    data: { details: { billerType, billerName, consumerNumber, razorpayOrderId: rpOrder.id } as Prisma.InputJsonValue },
+  });
+
+  res.status(201).json({
+    order: toOrder(order),
+    razorpayOrderId: rpOrder.id,
+    amount,
+    currency: "INR",
+    keyId: getRazorpayKeyId(),
+  });
 });

@@ -1,15 +1,26 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import type { Listing } from "@oneapp/shared";
 import { colors } from "../theme";
 
 export function ListingCard({ listing, onPress }: { listing: Listing; onPress: () => void }) {
   return (
     <Pressable style={styles.card} onPress={onPress}>
-      <Text style={styles.emoji}>{listing.imageEmoji}</Text>
+      {listing.imageUrl ? (
+        <Image source={{ uri: listing.imageUrl }} style={styles.thumb} />
+      ) : (
+        <Text style={styles.emoji}>{listing.imageEmoji}</Text>
+      )}
       <View style={styles.body}>
         <View style={styles.headerRow}>
           <View style={styles.titleBlock}>
-            <Text style={styles.title}>{listing.title}</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>{listing.title}</Text>
+              {listing.source ? (
+                <View style={styles.liveBadge}>
+                  <Text style={styles.liveBadgeText}>LIVE</Text>
+                </View>
+              ) : null}
+            </View>
             {listing.subtitle ? <Text style={styles.subtitle}>{listing.subtitle}</Text> : null}
           </View>
           <View style={styles.priceBlock}>
@@ -37,9 +48,13 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   emoji: { fontSize: 32 },
+  thumb: { width: 44, height: 44, borderRadius: 8, backgroundColor: colors.chip },
   body: { flex: 1 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
   titleBlock: { flex: 1 },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  liveBadge: { backgroundColor: "#d1fae5", borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 },
+  liveBadgeText: { fontSize: 9, fontWeight: "800", color: "#047857" },
   title: { fontWeight: "700", fontSize: 14, color: colors.text },
   subtitle: { fontSize: 12, color: colors.muted, marginTop: 1 },
   priceBlock: { alignItems: "flex-end" },

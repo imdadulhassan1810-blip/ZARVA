@@ -17,10 +17,12 @@ export function Category() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [liveNote, setLiveNote] = useState<string | null>(null);
 
   async function runSearch() {
     setLoading(true);
     setError(null);
+    setLiveNote(null);
     try {
       const combinedQuery = category?.group === "booking" ? [from, to, query].filter(Boolean).join(" ") : query;
       const results = await api.searchListings({
@@ -29,7 +31,20 @@ export function Category() {
         date: date || undefined,
         sort: sort || undefined,
       });
-      setListings(results);
+
+      // Grocery also merges in real live product data (no local seed data involved)
+      // from Open Food Facts, so a search actually reaches a real external catalog.
+      if (slug === "grocery" && query.trim()) {
+        try {
+          const live = await api.searchLiveGrocery(query.trim());
+          setListings([...results, ...live]);
+        } catch {
+          setListings(results);
+          setLiveNote("Live product search is temporarily unavailable — showing our catalog only.");
+        }
+      } else {
+        setListings(results);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
@@ -121,6 +136,8 @@ export function Category() {
           Search
         </button>
       </form>
+
+      {liveNote && <p className="text-amber-700 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{liveNote}</p>}
 
       {loading ? (
         <p className="text-slate-500">Loading…</p>

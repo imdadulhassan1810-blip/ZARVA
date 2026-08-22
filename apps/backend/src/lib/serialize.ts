@@ -18,12 +18,14 @@ export function toListing(listing: PrismaListing): Listing {
     title: listing.title,
     subtitle: listing.subtitle,
     imageEmoji: listing.imageEmoji,
+    imageUrl: listing.imageUrl,
     price: listing.price,
     priceUnit: listing.priceUnit,
     rating: listing.rating,
     location: listing.location,
     tags: listing.tags,
     meta: (listing.meta as Record<string, unknown>) ?? {},
+    source: listing.source ?? undefined,
   };
 }
 

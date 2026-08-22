@@ -7,6 +7,9 @@ import { cartRouter } from "./routes/cart";
 import { bookingsRouter } from "./routes/bookings";
 import { billsRouter } from "./routes/bills";
 import { ordersRouter } from "./routes/orders";
+import { paymentsRouter } from "./routes/payments";
+import { geocodeRouter } from "./routes/geocode";
+import { notificationsRouter } from "./routes/notifications";
 
 export function createApp() {
   const app = express();
@@ -23,6 +26,9 @@ export function createApp() {
   app.use("/api/bookings", bookingsRouter);
   app.use("/api/bills", billsRouter);
   app.use("/api/orders", ordersRouter);
+  app.use("/api/payments", paymentsRouter);
+  app.use("/api/geocode", geocodeRouter);
+  app.use("/api/notifications", notificationsRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "not_found", message: "Route not found" });

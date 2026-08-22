@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import type { Listing } from "@oneapp/shared";
+import type { GeoPoint, Listing, Order } from "@oneapp/shared";
 import { CATEGORY_BY_SLUG } from "@oneapp/shared";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
+import { PaymentActions } from "../components/PaymentActions";
+import { CabMapPicker } from "../components/CabMapPicker";
 
 export function ListingDetail() {
   const { id = "" } = useParams();
@@ -18,6 +20,8 @@ export function ListingDetail() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState<string | null>(null);
+  const [pickup, setPickup] = useState<GeoPoint | null>(null);
+  const [drop, setDrop] = useState<GeoPoint | null>(null);
 
   useEffect(() => {
     setListing(null);
@@ -26,13 +30,19 @@ export function ListingDetail() {
     });
   }, [id]);
 
-  if (error) return <p className="text-red-600 text-sm">{error}</p>;
+  if (error && !listing) return <p className="text-red-600 text-sm">{error}</p>;
   if (!listing) return <p className="text-slate-500">Loading…</p>;
 
   const category = CATEGORY_BY_SLUG[listing.categorySlug];
   const isBooking = category?.group === "booking";
+  const isCab = listing.categorySlug === "cab";
+  const needsPickupDrop = isCab && (!pickup || !drop);
 
-  async function handlePrimaryAction() {
+  function bookingDetails() {
+    return isCab ? { pickup, drop } : undefined;
+  }
+
+  async function handleAddToCart() {
     if (!user) {
       navigate("/login", { state: { from: location } });
       return;
@@ -41,18 +51,17 @@ export function ListingDetail() {
     setSubmitting(true);
     setError(null);
     try {
-      if (isBooking) {
-        const order = await api.createBooking({ listingId: listing.id, quantity });
-        setConfirmed(order.id);
-      } else {
-        await addToCart(listing.id, quantity);
-        navigate("/cart");
-      }
+      await addToCart(listing.id, quantity);
+      navigate("/cart");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleBookingSuccess(order: Order) {
+    setConfirmed(order.id);
   }
 
   if (confirmed) {
@@ -76,7 +85,11 @@ export function ListingDetail() {
   return (
     <div className="max-w-2xl mx-auto bg-white border border-slate-200 rounded-xl p-6 space-y-5">
       <div className="flex items-start gap-4">
-        <div className="text-5xl">{listing.imageEmoji}</div>
+        {listing.imageUrl ? (
+          <img src={listing.imageUrl} alt="" className="w-16 h-16 rounded-lg object-cover bg-slate-100" />
+        ) : (
+          <div className="text-5xl">{listing.imageEmoji}</div>
+        )}
         <div className="flex-1">
           <h1 className="text-xl font-bold">{listing.title}</h1>
           {listing.subtitle && <p className="text-slate-500">{listing.subtitle}</p>}
@@ -102,10 +115,22 @@ export function ListingDetail() {
         </dl>
       )}
 
+      {isCab && (
+        <div>
+          <label className="text-sm font-medium block mb-2">Pickup & drop location</label>
+          <CabMapPicker
+            pickup={pickup}
+            drop={drop}
+            onChange={(next) => {
+              setPickup(next.pickup);
+              setDrop(next.drop);
+            }}
+          />
+        </div>
+      )}
+
       <div className="flex items-center gap-3">
-        <label className="text-sm font-medium">
-          {isBooking ? "Quantity / travellers" : "Quantity"}
-        </label>
+        <label className="text-sm font-medium">{isBooking ? "Quantity / travellers" : "Quantity"}</label>
         <div className="flex items-center border border-slate-300 rounded-md">
           <button
             className="px-3 py-1 text-lg"
@@ -130,13 +155,35 @@ export function ListingDetail() {
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <button
-        onClick={handlePrimaryAction}
-        disabled={submitting}
-        className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white rounded-md py-3 font-semibold"
-      >
-        {submitting ? "Please wait…" : isBooking ? "Book now" : "Add to cart"}
-      </button>
+      {isBooking ? (
+        needsPickupDrop ? (
+          <button disabled className="w-full bg-slate-200 text-slate-500 rounded-md py-3 font-semibold cursor-not-allowed">
+            Set pickup & drop on the map to continue
+          </button>
+        ) : !user ? (
+          <button
+            onClick={() => navigate("/login", { state: { from: location } })}
+            className="w-full bg-brand-600 hover:bg-brand-700 text-white rounded-md py-3 font-semibold"
+          >
+            Log in to book
+          </button>
+        ) : (
+          <PaymentActions
+            label="Book now"
+            onMockPay={() => api.createBooking({ listingId: listing.id, quantity, details: bookingDetails() })}
+            onRazorpayInit={() => api.createBookingWithRazorpay({ listingId: listing.id, quantity, details: bookingDetails() })}
+            onSuccess={handleBookingSuccess}
+          />
+        )
+      ) : (
+        <button
+          onClick={handleAddToCart}
+          disabled={submitting}
+          className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white rounded-md py-3 font-semibold"
+        >
+          {submitting ? "Please wait…" : "Add to cart"}
+        </button>
+      )}
     </div>
   );
 }

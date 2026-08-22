@@ -1,32 +1,21 @@
-import { useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { useCart } from "../context/CartContext";
 import { api } from "../lib/api";
 import { colors } from "../theme";
+import { PaymentActions } from "../components/PaymentActions";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Cart">;
 
 export function CartScreen({ navigation }: Props) {
   const { items, updateQuantity, removeItem, refresh } = useCart();
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const total = items.reduce((sum, i) => sum + i.listing.price * i.quantity, 0);
 
-  async function checkout() {
-    setSubmitting(true);
-    setError(null);
-    try {
-      await api.checkoutCart();
-      await refresh();
-      navigation.navigate("Orders");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Checkout failed");
-    } finally {
-      setSubmitting(false);
-    }
+  async function handleSuccess() {
+    await refresh();
+    navigation.navigate("Orders");
   }
 
   if (items.length === 0) {
@@ -74,10 +63,12 @@ export function CartScreen({ navigation }: Props) {
           <Text style={styles.totalLabel}>Total</Text>
           <Text style={styles.totalValue}>₹{total.toLocaleString("en-IN")}</Text>
         </View>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <Pressable style={styles.checkoutButton} onPress={checkout} disabled={submitting}>
-          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.checkoutText}>Checkout</Text>}
-        </Pressable>
+        <PaymentActions
+          label="Checkout"
+          onMockPay={() => api.checkoutCart()}
+          onRazorpayInit={() => api.checkoutCartWithRazorpay()}
+          onSuccess={handleSuccess}
+        />
       </View>
     </View>
   );

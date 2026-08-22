@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import type { ReactNode } from "react";
 import type { User } from "@oneapp/shared";
 import { api, hasToken } from "../lib/api";
+import { registerForPushNotificationsAsync } from "../lib/notifications";
 
 interface AuthContextValue {
   user: User | null;
@@ -29,6 +30,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     })();
   }, []);
+
+  // Register (or re-register) this device's push token whenever we have a logged-in
+  // user. Fully best-effort — failures (permission denied, no EAS project linked
+  // yet, offline) are swallowed inside registerForPushNotificationsAsync.
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const token = await registerForPushNotificationsAsync();
+      if (token) {
+        try {
+          await api.registerPushToken(token);
+        } catch (err) {
+          console.warn("Failed to save push token:", err);
+        }
+      }
+    })();
+  }, [user]);
 
   const login = useCallback(async (email: string, password: string) => {
     const { user } = await api.login({ email, password });

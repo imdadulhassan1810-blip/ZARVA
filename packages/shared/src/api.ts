@@ -2,9 +2,13 @@ import type {
   AuthResponse,
   Bill,
   CartItem,
+  GeoPoint,
   Listing,
   ListingSearchQuery,
   Order,
+  RazorpayCheckoutInfo,
+  RazorpayConfig,
+  RazorpayVerifyInput,
   User,
 } from "./types";
 
@@ -103,6 +107,13 @@ export class ApiClient {
     return this.request<Listing>(`/api/listings/${id}`, { auth: false });
   }
 
+  /** Live product search against a real external catalog (currently: grocery via Open Food Facts). No local seed data involved. */
+  async searchLiveGrocery(query: string) {
+    return this.request<Listing[]>(`/api/listings/live/grocery?query=${encodeURIComponent(query)}`, {
+      auth: false,
+    });
+  }
+
   // --- Cart (shop categories) ---
   async getCart() {
     return this.request<CartItem[]>("/api/cart");
@@ -124,6 +135,14 @@ export class ApiClient {
     return this.request<Order>("/api/cart/checkout", { method: "POST", body: { details } });
   }
 
+  /** Same as checkoutCart, but pays via Razorpay instead of instant mock success. Returns a pending order plus what's needed to open Razorpay Checkout; call verifyRazorpayPayment once it completes. */
+  async checkoutCartWithRazorpay(details?: Record<string, unknown>) {
+    return this.request<RazorpayCheckoutInfo>("/api/cart/checkout/razorpay", {
+      method: "POST",
+      body: { details },
+    });
+  }
+
   // --- Direct booking (travel/gas categories) ---
   async createBooking(input: {
     listingId: string;
@@ -131,6 +150,14 @@ export class ApiClient {
     details?: Record<string, unknown>;
   }) {
     return this.request<Order>("/api/bookings", { method: "POST", body: input });
+  }
+
+  async createBookingWithRazorpay(input: {
+    listingId: string;
+    quantity?: number;
+    details?: Record<string, unknown>;
+  }) {
+    return this.request<RazorpayCheckoutInfo>("/api/bookings/razorpay", { method: "POST", body: input });
   }
 
   // --- Bills ---
@@ -142,6 +169,37 @@ export class ApiClient {
 
   async payBill(input: { billerType: string; billerName: string; consumerNumber: string; amount: number }) {
     return this.request<Order>("/api/bills/pay", { method: "POST", body: input });
+  }
+
+  async payBillWithRazorpay(input: {
+    billerType: string;
+    billerName: string;
+    consumerNumber: string;
+    amount: number;
+  }) {
+    return this.request<RazorpayCheckoutInfo>("/api/bills/pay/razorpay", { method: "POST", body: input });
+  }
+
+  // --- Razorpay ---
+  async getRazorpayConfig() {
+    return this.request<RazorpayConfig>("/api/payments/razorpay/config", { auth: false });
+  }
+
+  async verifyRazorpayPayment(input: RazorpayVerifyInput) {
+    return this.request<Order>("/api/payments/razorpay/verify", { method: "POST", body: input });
+  }
+
+  // --- Maps (cab pickup/drop) ---
+  async reverseGeocode(lat: number, lng: number) {
+    return this.request<GeoPoint>(`/api/geocode/reverse?lat=${lat}&lng=${lng}`, { auth: false });
+  }
+
+  // --- Push notifications ---
+  async registerPushToken(token: string) {
+    return this.request<{ ok: true }>("/api/notifications/register-token", {
+      method: "POST",
+      body: { token },
+    });
   }
 
   // --- Orders ---

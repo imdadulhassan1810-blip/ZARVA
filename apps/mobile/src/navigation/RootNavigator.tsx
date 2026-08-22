@@ -17,6 +17,7 @@ import { BillsScreen } from "../screens/BillsScreen";
 import { OrdersScreen } from "../screens/OrdersScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { TrackingScreen } from "../screens/TrackingScreen";
+import { AdminScreen } from "../screens/AdminScreen";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -31,6 +32,11 @@ function HeaderRight({ navigation }: { navigation: NavProp }) {
       <Pressable onPress={() => navigation.navigate("Cart")} style={{ flexDirection: "row", gap: 2 }}>
         <Text style={{ color: "#fff", fontSize: 13 }}>🛒{count > 0 ? ` ${count}` : ""}</Text>
       </Pressable>
+      {!user && (
+        <Pressable onPress={() => navigation.navigate("Register")}>
+          <Text style={{ color: "#fff", fontSize: 13 }}>Sign up</Text>
+        </Pressable>
+      )}
       <Pressable onPress={() => navigation.navigate(user ? "Profile" : "Login")}>
         <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>
           {user ? user.name.split(" ")[0] : "Log in"}
@@ -61,6 +67,7 @@ export function RootNavigator() {
         <Stack.Screen name="Orders" component={OrdersScreen} options={{ title: "Your orders" }} />
         <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: "Live tracking" }} />
         <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: "My profile" }} />
+        <Stack.Screen name="Admin" component={AdminScreen} options={{ title: "🛠️ Admin console" }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

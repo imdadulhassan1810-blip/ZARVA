@@ -1,9 +1,10 @@
 import { FormEvent, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { GoogleSignInButton } from "../components/GoogleSignInButton";
 
 export function Login() {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("demo@oneapp.dev");
@@ -11,16 +12,33 @@ export function Login() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  function goToNext() {
+    const from = (location.state as { from?: Location })?.from?.pathname ?? "/";
+    navigate(from, { replace: true });
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
       await login(email, password);
-      const from = (location.state as { from?: Location })?.from?.pathname ?? "/";
-      navigate(from, { replace: true });
+      goToNext();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function onGoogleCredential(idToken: string) {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await loginWithGoogle(idToken);
+      goToNext();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed");
     } finally {
       setSubmitting(false);
     }
@@ -36,6 +54,9 @@ export function Login() {
         </Link>
         .
       </p>
+      <div className="mb-4">
+        <GoogleSignInButton onCredential={onGoogleCredential} />
+      </div>
       <form onSubmit={onSubmit} className="space-y-3">
         <div>
           <label className="block text-sm font-medium mb-1">Email</label>

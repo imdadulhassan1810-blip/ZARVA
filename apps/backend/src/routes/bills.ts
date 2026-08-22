@@ -7,6 +7,7 @@ import { prisma } from "../lib/prisma";
 import { toOrder } from "../lib/serialize";
 import { sendPushNotification } from "../lib/push";
 import { razorpay, razorpayEnabled, getRazorpayKeyId } from "../lib/razorpay";
+import { onlineMethodSchema } from "../lib/paymentMethod";
 
 export const billsRouter = Router();
 billsRouter.use(requireAuth);
@@ -65,6 +66,7 @@ const paySchema = z.object({
   consumerNumber: z.string().min(1),
   amount: z.number().positive(),
 });
+const payRazorpaySchema = paySchema.extend({ preferredMethod: onlineMethodSchema.optional() });
 
 billsRouter.post("/pay", async (req: AuthedRequest, res) => {
   const parsed = paySchema.safeParse(req.body);
@@ -78,6 +80,7 @@ billsRouter.post("/pay", async (req: AuthedRequest, res) => {
       userId: req.userId!,
       type: "bill_payment",
       status: "completed",
+      paymentMethod: "mock",
       categorySlug: "bills",
       total: amount,
       items: [
@@ -110,17 +113,19 @@ billsRouter.post("/pay/razorpay", async (req: AuthedRequest, res) => {
     });
   }
 
-  const parsed = paySchema.safeParse(req.body);
+  const parsed = payRazorpaySchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "invalid_input", message: "billerType, billerName, consumerNumber and amount are required" });
   }
-  const { billerType, billerName, consumerNumber, amount } = parsed.data;
+  const { billerType, billerName, consumerNumber, amount, preferredMethod } = parsed.data;
+  const method = preferredMethod ?? "razorpay";
 
   const order = await prisma.order.create({
     data: {
       userId: req.userId!,
       type: "bill_payment",
       status: "pending_payment",
+      paymentMethod: method,
       categorySlug: "bills",
       total: amount,
       items: [
@@ -153,5 +158,6 @@ billsRouter.post("/pay/razorpay", async (req: AuthedRequest, res) => {
     amount,
     currency: "INR",
     keyId: getRazorpayKeyId(),
+    preferredMethod: method,
   });
 });

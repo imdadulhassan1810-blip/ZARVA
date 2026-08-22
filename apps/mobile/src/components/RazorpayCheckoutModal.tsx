@@ -16,6 +16,8 @@ interface Props {
   name: string;
   description?: string;
   prefill?: { name?: string; email?: string; contact?: string };
+  /** Restricts which tab of the Checkout widget opens — e.g. {card:'1',netbanking:'0',upi:'0',wallet:'0'}. */
+  method?: Record<string, string>;
   onSuccess: (response: RazorpaySuccessResponse) => void;
   onDismiss: () => void;
 }
@@ -35,6 +37,7 @@ export function RazorpayCheckoutModal({
   name,
   description,
   prefill,
+  method,
   onSuccess,
   onDismiss,
 }: Props) {
@@ -56,6 +59,7 @@ export function RazorpayCheckoutModal({
         description: ${JSON.stringify(description ?? "")},
         prefill: ${JSON.stringify(prefill ?? {})},
         theme: { color: "#2a5cf5" },
+        ${method ? `method: ${JSON.stringify(method)},` : ""}
         handler: function (response) { post({ type: "success", ...response }); },
         modal: { ondismiss: function () { post({ type: "dismiss" }); } }
       });

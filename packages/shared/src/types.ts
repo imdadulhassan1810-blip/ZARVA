@@ -1,8 +1,14 @@
+export type UserRole = "user" | "admin";
+/** How this account authenticates. "google" accounts have no password — see /api/auth/google. */
+export type AuthProvider = "password" | "google";
+
 export interface User {
   id: string;
   name: string;
   email: string;
   phone?: string | null;
+  role: UserRole;
+  authProvider: AuthProvider;
   createdAt: string;
 }
 
@@ -66,7 +72,10 @@ export interface Bill {
 
 export type OrderType = "booking" | "purchase" | "bill_payment";
 export type OrderStatus = "pending_payment" | "confirmed" | "completed" | "cancelled";
-export type PaymentMethod = "mock" | "razorpay";
+/** "mock" is the demo fallback used only when Razorpay isn't configured and the category isn't COD-eligible. */
+export type PaymentMethod = "mock" | "cod" | "card" | "netbanking" | "razorpay";
+/** The three online flavours actually route through the same Razorpay Checkout widget, restricted to the chosen method — see openRazorpayCheckout / RazorpayCheckoutModal. */
+export type OnlinePaymentMethod = "card" | "netbanking" | "razorpay";
 
 export interface OrderItem {
   listingTitle: string;
@@ -80,6 +89,7 @@ export interface Order {
   id: string;
   type: OrderType;
   status: OrderStatus;
+  paymentMethod: PaymentMethod;
   categorySlug: string;
   total: number;
   items: OrderItem[];
@@ -103,12 +113,23 @@ export interface RazorpayConfig {
   keyId?: string;
 }
 
+export interface GoogleAuthConfig {
+  enabled: boolean;
+  /** "Web application" OAuth client id — used by the web app, and as the Expo Go / web-target client id on mobile. */
+  clientId?: string;
+  /** Native OAuth client ids, required for Google sign-in in a real iOS/Android build (not Expo Go) — see the README. */
+  iosClientId?: string;
+  androidClientId?: string;
+}
+
 export interface RazorpayCheckoutInfo {
   order: Order;
   razorpayOrderId: string;
   amount: number;
   currency: string;
   keyId: string;
+  /** Which Razorpay Checkout method tab to restrict the widget to. */
+  preferredMethod: OnlinePaymentMethod;
 }
 
 export interface RazorpayVerifyInput {
@@ -159,4 +180,35 @@ export interface TrackingState {
   route: GeoPoint[];
   driver: TrackingDriver;
   startedAt: string;
+}
+
+// --- Admin (only ever returned to a logged-in admin — see /api/admin/*) ---
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  role: UserRole;
+  authProvider: AuthProvider;
+  isActive: boolean;
+  createdAt: string;
+  orderCount: number;
+  totalSpent: number;
+}
+
+/** Same shape as Order, plus who placed it — admins need to see across every user. */
+export interface AdminOrder extends Order {
+  userId: string;
+  userName: string;
+  userEmail: string;
+}
+
+export interface AdminStats {
+  totalUsers: number;
+  activeUsers: number;
+  totalOrders: number;
+  totalRevenue: number;
+  ordersByCategory: Record<string, number>;
+  ordersByStatus: Record<string, number>;
 }

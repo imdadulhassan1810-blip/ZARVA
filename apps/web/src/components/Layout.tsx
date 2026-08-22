@@ -20,6 +20,11 @@ export function Layout() {
             <NavLink to="/bills" className="hover:underline">
               Bill Payments
             </NavLink>
+            {user?.role === "admin" && (
+              <NavLink to="/admin" className="hover:underline">
+                🛠️ Admin
+              </NavLink>
+            )}
           </nav>
           <div className="flex items-center gap-4">
             <Link to="/cart" className="relative hover:underline text-sm font-medium">
@@ -43,9 +48,14 @@ export function Layout() {
                 </button>
               </div>
             ) : (
-              <Link to="/login" className="bg-brand-700 hover:bg-brand-800 px-3 py-1.5 rounded-md text-sm">
-                Log in
-              </Link>
+              <div className="flex items-center gap-3 text-sm">
+                <Link to="/register" className="hover:underline">
+                  Sign up
+                </Link>
+                <Link to="/login" className="bg-brand-700 hover:bg-brand-800 px-3 py-1.5 rounded-md">
+                  Log in
+                </Link>
+              </div>
             )}
           </div>
         </div>

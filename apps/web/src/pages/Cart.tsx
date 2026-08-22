@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import type { Order } from "@oneapp/shared";
+import { COD_ELIGIBLE_CATEGORY_SLUGS } from "@oneapp/shared";
 import { useCart } from "../context/CartContext";
 import { api } from "../lib/api";
 import { PaymentActions } from "../components/PaymentActions";
@@ -9,6 +10,8 @@ export function Cart() {
   const navigate = useNavigate();
 
   const total = items.reduce((sum, i) => sum + i.listing.price * i.quantity, 0);
+  // Mirrors the backend, which prices/validates COD against the first item's category.
+  const codEligible = items.length > 0 && COD_ELIGIBLE_CATEGORY_SLUGS.includes(items[0].listing.categorySlug);
 
   async function handleSuccess(order: Order) {
     await refresh();
@@ -74,8 +77,9 @@ export function Cart() {
 
       <PaymentActions
         label="Checkout"
-        onMockPay={() => api.checkoutCart()}
-        onRazorpayInit={() => api.checkoutCartWithRazorpay()}
+        codEligible={codEligible}
+        onMockPay={(method) => api.checkoutCart(undefined, method === "cod" ? "cod" : "mock")}
+        onRazorpayInit={(preferredMethod) => api.checkoutCartWithRazorpay(undefined, preferredMethod)}
         onSuccess={handleSuccess}
       />
     </div>

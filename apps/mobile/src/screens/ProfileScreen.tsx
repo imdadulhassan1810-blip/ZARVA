@@ -14,10 +14,15 @@ export function ProfileScreen({ navigation }: Props) {
     <View style={styles.screen}>
       <View style={styles.card}>
         <Field label="Name" value={user.name} />
-        <Field label="Email" value={user.email} />
+        <Field label="Email" value={user.authProvider === "google" ? `${user.email}  ·  via Google` : user.email} />
         {user.phone ? <Field label="Phone" value={user.phone} /> : null}
         <Field label="Member since" value={new Date(user.createdAt).toLocaleDateString()} />
       </View>
+      {user.role === "admin" && (
+        <Pressable style={styles.adminButton} onPress={() => navigation.navigate("Admin")}>
+          <Text style={styles.adminButtonText}>🛠️ Open admin console</Text>
+        </Pressable>
+      )}
       <Pressable
         style={styles.logoutButton}
         onPress={async () => {
@@ -48,4 +53,6 @@ const styles = StyleSheet.create({
   fieldValue: { fontSize: 14, fontWeight: "600", color: colors.text },
   logoutButton: { borderWidth: 1, borderColor: colors.danger, borderRadius: 10, paddingVertical: 12, alignItems: "center" },
   logoutText: { color: colors.danger, fontWeight: "700" },
+  adminButton: { backgroundColor: colors.brand, borderRadius: 10, paddingVertical: 12, alignItems: "center" },
+  adminButtonText: { color: "#fff", fontWeight: "800" },
 });

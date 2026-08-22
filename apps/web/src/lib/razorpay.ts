@@ -19,6 +19,8 @@ interface RazorpayOptions {
   theme?: { color?: string };
   handler: (response: RazorpaySuccessResponse) => void;
   modal?: { ondismiss?: () => void };
+  /** Restricts which tab of the Checkout widget opens — e.g. {card:'1',netbanking:'0',upi:'0',wallet:'0'}. */
+  method?: Record<string, string>;
 }
 
 interface RazorpayInstance {

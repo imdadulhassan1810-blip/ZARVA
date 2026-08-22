@@ -4,11 +4,12 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../context/AuthContext";
 import { colors } from "../theme";
+import { GoogleSignInButton } from "../components/GoogleSignInButton";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Register">;
 
 export function RegisterScreen({ navigation }: Props) {
-  const { register } = useAuth();
+  const { register, loginWithGoogle } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -29,9 +30,24 @@ export function RegisterScreen({ navigation }: Props) {
     }
   }
 
+  async function onGoogleCredential(idToken: string) {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await loginWithGoogle(idToken);
+      navigation.replace("Home");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <View style={styles.screen}>
       <Text style={styles.title}>Create an account</Text>
+
+      <GoogleSignInButton onCredential={onGoogleCredential} />
 
       <Text style={styles.label}>Full name</Text>
       <TextInput style={styles.input} value={name} onChangeText={setName} />

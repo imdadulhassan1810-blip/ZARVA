@@ -10,6 +10,8 @@ const envSchema = z.object({
   MSG91_TEMPLATE_ID: z.string().optional(),
   PAYMENT_PROVIDER: z.enum(["mock", "razorpay"]).default("mock"),
   ENABLED_MODULES: z.string().default(""),
+  /** Comma-separated mobile numbers allowed into admin screens, e.g. "9876543210,9123456780". */
+  ADMIN_PHONES: z.string().default(""),
   CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:8081"),
 });
 export type Config = z.infer<typeof envSchema>;

@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import { parseEnabledModules, type ModuleStatus } from "@zarva/core";
-import { InvalidSignatureError, type PaymentProvider } from "@zarva/payments";
+import { InvalidSignatureError, MockProvider, type PaymentProvider } from "@zarva/payments";
 import { AuthService } from "./auth/service";
 import type { OtpSender } from "./auth/otp-sender";
 import { verifyAccessToken } from "./auth/tokens";
@@ -21,6 +21,8 @@ declare module "fastify" {
     config: Config;
     services: { auth: AuthService; payments: PaymentService };
     requireAuth: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    /** Current time. Injected so tests can move the clock. */
+    now: () => Date;
   }
   interface FastifyRequest {
     userId?: string;
@@ -35,6 +37,7 @@ export interface AppDeps {
   otpSender: OtpSender;
   paymentProvider: PaymentProvider;
   logger?: boolean;
+  now?: () => Date;
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -57,6 +60,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const auth = new AuthService(deps.db, deps.config.JWT_SECRET, deps.otpSender);
   app.decorate("db", deps.db);
   app.decorate("config", deps.config);
+  app.decorate("now", deps.now ?? (() => new Date()));
   app.decorate("services", { auth, payments: new PaymentService(deps.db, deps.paymentProvider) });
   app.decorate("requireAuth", async (req: FastifyRequest) => {
     const h = req.headers.authorization;
@@ -90,6 +94,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(authRoutes);
   await app.register(meRoutes);
   await app.register(paymentRoutes);
+
+  // Dev only: stands in for the Razorpay checkout sheet so the whole booking flow runs without keys.
+  if (deps.paymentProvider instanceof MockProvider && deps.config.NODE_ENV !== "production") {
+    const mock = deps.paymentProvider;
+    app.post("/v1/payments/mock/:providerOrderId/succeed", async (req) => {
+      const { providerOrderId } = req.params as { providerOrderId: string };
+      return { confirmation: mock.simulateSuccess(providerOrderId) };
+    });
+  }
 
   const statuses: ModuleStatus[] = await buildRegistry().mount(app, parseEnabledModules(deps.config.ENABLED_MODULES), (msg, extra) =>
     app.log.info(extra ?? {}, msg),

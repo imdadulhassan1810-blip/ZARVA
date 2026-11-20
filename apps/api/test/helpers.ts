@@ -4,15 +4,17 @@ import { buildApp } from "../src/app";
 import { MemoryOtpSender } from "../src/auth/otp-sender";
 import { createDb } from "../src/db/client";
 import { loadConfig } from "../src/lib/config";
+import { seedHomeCatalog } from "../src/modules/home/seed";
 
-export async function setupTestApp(env: Record<string, string> = {}) {
+export async function setupTestApp(env: Record<string, string> = {}, opts: { now?: () => Date } = {}) {
   const url = process.env.TEST_DATABASE_URL ?? "postgres://zarva:zarva@localhost:5432/zarva_test";
   const { db, sql } = createDb(url);
-  await sql`truncate payment_events, payments, addresses, sessions, otp_challenges, users restart identity cascade`;
+  await sql`truncate home_booking_events, home_booking_items, home_bookings, home_pros, payment_events, payments, addresses, sessions, otp_challenges, users restart identity cascade`;
+  await seedHomeCatalog(db);
   const config = loadConfig({ NODE_ENV: "test", DATABASE_URL: url, JWT_SECRET: "test-secret-test-secret-test-secret-123", ...env });
   const otp = new MemoryOtpSender();
   const provider = new MockProvider();
-  const app = await buildApp({ db, config, otpSender: otp, paymentProvider: provider });
+  const app = await buildApp({ db, config, otpSender: otp, paymentProvider: provider, now: opts.now });
   return {
     app, db, sql, otp, provider,
     async close() {

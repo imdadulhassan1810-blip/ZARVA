@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { ClientConfirmation, PaymentProvider } from "@zarva/payments";
-import type { Db } from "../db/client";
+import type { Db, Tx } from "../db/client";
 import { paymentEvents, payments, users } from "../db/schema";
 import { AppError, badRequest, notFound } from "../lib/errors";
 
@@ -18,11 +18,29 @@ export interface CreateForOrderInput {
 export type PaymentRow = typeof payments.$inferSelect;
 
 /**
+ * Called inside the same transaction that changed the payment, so the vertical's order and the
+ * payment can never disagree. If the handler throws, the payment change (and the webhook dedupe
+ * row) roll back and the provider's retry gets another chance.
+ */
+export type PaymentStatusHandler = (payment: PaymentRow, tx: Tx) => Promise<void>;
+
+/**
  * The only way any vertical takes money. Verticals call createForOrder(), hand clientPayload
  * to the app, and listen for the status change (later: an outbox/event bus).
  */
 export class PaymentService {
+  private handlers = new Map<string, PaymentStatusHandler[]>();
+
   constructor(private db: Db, private provider: PaymentProvider) {}
+
+  /** A vertical subscribes to status changes of its own payments (module = vertical id). */
+  onStatusChange(module: string, handler: PaymentStatusHandler): void {
+    this.handlers.set(module, [...(this.handlers.get(module) ?? []), handler]);
+  }
+
+  private async emit(p: PaymentRow, tx: Tx): Promise<void> {
+    for (const h of this.handlers.get(p.module) ?? []) await h(p, tx);
+  }
 
   async createForOrder(input: CreateForOrderInput): Promise<{ payment: PaymentRow; clientPayload: Record<string, unknown> }> {
     if (!Number.isInteger(input.amountPaise) || input.amountPaise < 100) throw badRequest("invalid_amount", "Amount must be at least ₹1 in whole paise");
@@ -64,12 +82,15 @@ export class PaymentService {
     if (!p) throw notFound("Payment");
     if (!this.provider.verifyClientConfirmation(c)) throw badRequest("invalid_signature", "Payment could not be verified");
     if (p.status !== "created") return p;
-    const [u] = await this.db
-      .update(payments)
-      .set({ status: "authorized", providerPaymentId: c.providerPaymentId, updatedAt: new Date() })
-      .where(and(eq(payments.id, p.id), eq(payments.status, "created")))
-      .returning();
-    return u ?? p;
+    return this.db.transaction(async (tx) => {
+      const [u] = await tx
+        .update(payments)
+        .set({ status: "authorized", providerPaymentId: c.providerPaymentId, updatedAt: new Date() })
+        .where(and(eq(payments.id, p.id), eq(payments.status, "created")))
+        .returning();
+      if (u) await this.emit(u, tx);
+      return u ?? p;
+    });
   }
 
   /** Webhook is the source of truth. Idempotent: duplicate event ids are ignored. */
@@ -91,12 +112,17 @@ export class PaymentService {
         if (ev.amountPaise !== null && ev.amountPaise !== p.amountPaise) {
           throw new AppError(422, "amount_mismatch", `Captured ${ev.amountPaise} but expected ${p.amountPaise}`);
         }
-        await tx
-          .update(payments)
-          .set({ status: "captured", providerPaymentId: ev.providerPaymentId ?? p.providerPaymentId, method: ev.method, updatedAt: new Date() })
-          .where(eq(payments.id, p.id));
+        if (p.status === "created" || p.status === "authorized") {
+          const [u] = await tx
+            .update(payments)
+            .set({ status: "captured", providerPaymentId: ev.providerPaymentId ?? p.providerPaymentId, method: ev.method, updatedAt: new Date() })
+            .where(eq(payments.id, p.id))
+            .returning();
+          await this.emit(u!, tx);
+        }
       } else if (ev.type === "payment.failed" && (p.status === "created" || p.status === "authorized")) {
-        await tx.update(payments).set({ status: "failed", method: ev.method, updatedAt: new Date() }).where(eq(payments.id, p.id));
+        const [u] = await tx.update(payments).set({ status: "failed", method: ev.method, updatedAt: new Date() }).where(eq(payments.id, p.id)).returning();
+        await this.emit(u!, tx);
       }
       return { duplicate: false };
     });

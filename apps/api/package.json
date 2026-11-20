@@ -13,11 +13,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@electric-sql/pglite": "0.5.17",
+    "@fastify/cors": "10.0.2",
+    "@fastify/helmet": "13.0.1",
     "@zarva/brand": "workspace:*",
     "@zarva/core": "workspace:*",
     "@zarva/payments": "workspace:*",
-    "@fastify/cors": "10.0.2",
-    "@fastify/helmet": "13.0.1",
     "drizzle-orm": "0.38.4",
     "fastify": "5.2.1",
     "jose": "5.9.6",

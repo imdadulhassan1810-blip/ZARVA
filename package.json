@@ -3,8 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "packageManager": "pnpm@10.28.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "dev": "pnpm --parallel --filter @zarva/api --filter @zarva/web dev",
     "dev:api": "pnpm --filter @zarva/api dev",
     "dev:web": "pnpm --filter @zarva/web dev",
     "dev:mobile": "pnpm --filter @zarva/mobile start",

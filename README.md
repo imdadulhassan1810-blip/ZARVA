@@ -11,8 +11,8 @@ This repository is the **vertical-agnostic foundation** (sign-in, profiles, addr
 | Language | TypeScript everywhere | One language for API, web and mobile; shared types and validation |
 | Monorepo | pnpm workspaces | Simple, fast, no extra build tool needed yet |
 | API | Fastify 5 + Drizzle ORM + PostgreSQL 16 | Fast, typed SQL, plain migrations; Postgres covers everything up to serious scale |
-| Web | Next.js 15 (App Router) + PWA manifest | SEO for landing pages, installable on Android |
-| Mobile | Expo SDK 53 (React Native 0.79) | One codebase for Android and iOS; OTA updates |
+| Web | Next.js 15.5 (App Router) + PWA manifest | SEO for landing pages, installable on Android |
+| Mobile | Expo SDK 58 (React Native 0.88) | One codebase for Android and iOS; OTA updates |
 | Auth | Phone OTP, JWT access token (15 min) + rotating refresh token (60 days) | Phone is the identity in India |
 | SMS | MSG91 adapter (console sender in dev) | Needs DLT registration before go-live |
 | Payments | Provider interface; Razorpay adapter (UPI first) + mock | Swap provider without touching verticals |
@@ -30,23 +30,51 @@ packages/
   payments/   PaymentProvider interface, Razorpay + mock adapters
 ```
 
-## Run it locally
+## Run it locally (Windows, macOS, Linux)
 
-Needs Node 22+, pnpm 10, and Postgres 16 (or Docker).
+You only need **Node.js 22 or newer** and **pnpm**. There's no database to install: by default the API uses a built-in demo database that lives in `apps/api/.data`.
 
-```bash
-pnpm install
-cp .env.example .env              # then set JWT_SECRET to a long random string
-docker compose up -d              # or use your own Postgres
-pnpm db:migrate
-pnpm dev:api                      # http://localhost:4000, OTP codes print in this terminal
-pnpm dev:web                      # http://localhost:3000
-pnpm dev:mobile                   # scan the QR with Expo Go
+### One-time setup
+
+1. Install Node.js 22 LTS (or newer) from https://nodejs.org (accept the defaults).
+2. Open a **new** terminal (on Windows, PowerShell or the VS Code terminal) and run:
+   ```
+   npm install -g pnpm@10
+   ```
+3. In the project folder:
+   ```
+   pnpm install
+   ```
+
+### Start the website
+
+```
+pnpm dev
 ```
 
-On a physical phone, set `extra.apiUrl` in `apps/mobile/app.json` to your computer's LAN IP.
+Wait for `ZARVA API ready` and `Ready`, then open **http://localhost:3000**.
 
-Tests need a `zarva_test` database (`createdb -O zarva zarva_test`), then `pnpm test`.
+To sign in, enter any 10-digit Indian mobile number (for example `98765 43210`) and press **Send OTP**. No SMS is sent: the 6-digit code appears in the terminal as
+`>>> OTP for +919876543210: 123456 <<<`. Type that code into the website.
+
+Stop with `Ctrl + C`. Your demo data stays until you delete `apps/api/.data`.
+
+### See the mobile app on your phone
+
+1. Install **Expo Go** from the Play Store or App Store.
+2. Make sure the phone and the computer are on the **same Wi-Fi**.
+3. Keep `pnpm dev` running, and in a **second** terminal run:
+   ```
+   pnpm dev:mobile
+   ```
+4. Scan the QR code: on Android with the Expo Go app, on iPhone with the Camera app.
+5. If Windows asks whether Node.js may use the network, allow it on **private networks**, or the phone can't reach the API.
+
+The phone finds the API on your computer automatically. If it can't (some office or hostel Wi-Fi blocks devices from seeing each other), run `pnpm dev:mobile -- --tunnel` instead, and set `extra.apiUrl` in `apps/mobile/app.json` to an address the phone can reach.
+
+### Using real PostgreSQL instead (optional)
+
+Copy `.env.example` to `.env`, set `DATABASE_URL=postgres://zarva:zarva@localhost:5432/zarva_dev`, and start Postgres (`docker compose up -d`). Migrations run automatically when the API starts. The API tests need a `zarva_test` Postgres database (`createdb -O zarva zarva_test`); then run `pnpm test`.
 
 ## API (v1)
 

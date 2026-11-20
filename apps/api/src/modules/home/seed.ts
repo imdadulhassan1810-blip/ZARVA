@@ -2,6 +2,7 @@ import { inArray, sql } from "drizzle-orm";
 import { phoneSchema } from "@zarva/core";
 import type { Db } from "../../db/client";
 import { connectDb } from "../../db/connect";
+import { loadConfig } from "../../lib/config";
 import { users } from "../../db/schema";
 import { categories, cities, demoPros } from "./seed-data";
 import { homeCategories, homeCities, homePros, homeServices } from "./schema";
@@ -60,7 +61,7 @@ export async function ensureHomeSeed(db: Db, opts: { demoPros: boolean }): Promi
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const withDemo = process.argv.includes("--demo");
-  if (withDemo && process.env.NODE_ENV === "production") throw new Error("Refusing to create demo pros in production");
+  if (withDemo && !loadConfig().devShortcuts) throw new Error("Refusing to create demo pros: this looks like a real deployment (real SMS/email or production)");
   const { db, close } = await connectDb(process.env.DATABASE_URL || "pglite");
   await seedHomeCatalog(db);
   if (withDemo) await seedHomeDemoPros(db);

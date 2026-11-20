@@ -139,3 +139,17 @@ export const paymentEvents = pgTable(
 
 // Vertical modules own their tables (prefixed <id>_) but share one schema for migrations and typed queries.
 export * from "../modules/home/schema";
+
+/**
+ * Admin second factor. A session must be unlocked with an authenticator code before admin APIs
+ * answer. Rows die with the session (logout, refresh-token reuse) and expire after a few hours.
+ */
+export const adminUnlocks = pgTable("admin_unlocks", {
+  sessionId: uuid("session_id").primaryKey().references(() => sessions.id, { onDelete: "cascade" }),
+  unlockedUntil: timestamp("unlocked_until", { withTimezone: true }),
+  failedAttempts: integer("failed_attempts").notNull().default(0),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  /** Last accepted TOTP time step: the same code can't be used twice. */
+  lastStep: integer("last_step"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

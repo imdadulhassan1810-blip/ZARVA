@@ -1,9 +1,6 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
-import { eq } from "drizzle-orm";
-import { homeBookingStatuses, homeCreateBookingSchema, homeProApplySchema, phoneSchema } from "@zarva/core";
+import type { FastifyInstance } from "fastify";
+import { homeBookingStatuses, homeCreateBookingSchema, homeProApplySchema } from "@zarva/core";
 import { z } from "zod";
-import { users } from "../../db/schema";
-import { forbidden } from "../../lib/errors";
 import { parse } from "../../lib/validate";
 import type { HomeServicesService } from "./service";
 
@@ -15,18 +12,6 @@ const confirmSchema = z.object({
 });
 
 export function homeRoutes(app: FastifyInstance, prefix: string, svc: HomeServicesService) {
-  const admins = new Set(
-    app.config.ADMIN_PHONES.split(",").map((s) => s.trim()).filter(Boolean).flatMap((s) => {
-      const p = phoneSchema.safeParse(s);
-      return p.success ? [p.data] : [];
-    }),
-  );
-  async function requireAdmin(req: FastifyRequest) {
-    await app.requireAuth(req, undefined as never);
-    const u = await app.db.query.users.findFirst({ where: eq(users.id, req.userId!) });
-    if (!u?.phone || !admins.has(u.phone)) throw forbidden("Admins only");
-  }
-
   // ----- Public catalogue -----
   app.get(`${prefix}/cities`, async () => ({ cities: await svc.cities() }));
 
@@ -75,7 +60,8 @@ export function homeRoutes(app: FastifyInstance, prefix: string, svc: HomeServic
 
   // ----- Admin (phones listed in ADMIN_PHONES) -----
   app.register(async (r) => {
-    r.addHook("preHandler", requireAdmin);
+    // Every admin route: signed in + verified phone in ADMIN_PHONES + authenticator code. See admin/guard.ts.
+    r.addHook("preHandler", app.requireAdmin);
     r.get(`${prefix}/admin/bookings`, async (req) => {
       const { status } = parse(z.object({ status: z.enum(homeBookingStatuses).optional() }), req.query);
       return { bookings: await svc.adminBookings(status) };

@@ -1,85 +1,61 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { phoneSchema } from "@zarva/core";
+import { useCallback, useEffect, useState } from "react";
+import type { AuthProviders, LoginResult } from "@zarva/core";
+import { CodeForm } from "../../components/CodeForm";
+import { GoogleButton } from "../../components/GoogleButton";
 import { api } from "../../lib/api";
+
+type Method = "phone" | "email";
+
+function safeNext(): string | null {
+  // Only same-site paths, so ?next= can't bounce people to another website.
+  const next = new URLSearchParams(window.location.search).get("next");
+  return next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+}
 
 export default function Login() {
   const router = useRouter();
-  const [step, setStep] = useState<"phone" | "otp">("phone");
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [wait, setWait] = useState(0);
+  const [method, setMethod] = useState<Method>("phone");
+  const [providers, setProviders] = useState<AuthProviders | null>(null);
 
   useEffect(() => {
-    if (wait <= 0) return;
-    const t = setTimeout(() => setWait((w) => w - 1), 1000);
-    return () => clearTimeout(t);
-  }, [wait]);
+    api.providers().then(setProviders).catch(() => setProviders({ phone: true, email: true, google: { mode: "off", clientId: null } }));
+  }, []);
 
-  async function send(e?: React.FormEvent) {
-    e?.preventDefault();
-    setError(null);
-    const parsed = phoneSchema.safeParse(phone);
-    if (!parsed.success) return setError(parsed.error.issues[0]?.message ?? "Invalid number");
-    setBusy(true);
-    try {
-      const r = await api.requestOtp(parsed.data);
-      setStep("otp");
-      setWait(r.retryAfter);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const done = useCallback(
+    (r: LoginResult) => {
+      const next = safeNext();
+      // New or incomplete accounts go to the account page to add a name and a phone (needed for bookings).
+      const incomplete = r.isNewUser || !r.user.name || !r.user.phone;
+      router.replace(incomplete ? `/account?welcome=1${next ? `&next=${encodeURIComponent(next)}` : ""}` : (next ?? "/"));
+    },
+    [router],
+  );
 
-  async function verify(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      const r = await api.verifyOtp(phone, code);
-      // Only same-site paths, so ?next= can't bounce people to another website.
-      const next = new URLSearchParams(window.location.search).get("next");
-      const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
-      router.replace(r.isNewUser || !r.user.name ? `/account?welcome=1${safeNext ? `&next=${encodeURIComponent(safeNext)}` : ""}` : safeNext ?? "/");
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const onGoogle = useCallback(async (idToken: string) => done(await api.googleLogin(idToken)), [done]);
 
   return (
     <div style={{ maxWidth: 420, margin: "24px auto" }}>
-      <h1>Sign in</h1>
-      <p className="muted">We'll send a 6-digit code to your mobile number.</p>
-      {step === "phone" ? (
-        <form className="card stack" onSubmit={send}>
-          <label>
-            Mobile number
-            <input inputMode="tel" autoComplete="tel" placeholder="98765 43210" value={phone} onChange={(e) => setPhone(e.target.value)} autoFocus />
-          </label>
-          {error && <p className="error" role="alert">{error}</p>}
-          <button className="btn" disabled={busy}>{busy ? "Sending…" : "Send OTP"}</button>
-        </form>
-      ) : (
-        <form className="card stack" onSubmit={verify}>
-          <label>
-            Code sent to {phone}
-            <input className="otp-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} autoFocus />
-          </label>
-          {error && <p className="error" role="alert">{error}</p>}
-          <button className="btn" disabled={busy || code.length !== 6}>{busy ? "Checking…" : "Verify"}</button>
-          <div className="row">
-            <button type="button" className="btn btn-ghost" onClick={() => { setStep("phone"); setCode(""); }}>Change number</button>
-            <button type="button" className="btn btn-ghost" disabled={wait > 0 || busy} onClick={() => send()}>{wait > 0 ? `Resend in ${wait}s` : "Resend"}</button>
-          </div>
-        </form>
-      )}
+      <h1>Sign in or sign up</h1>
+      <p className="muted">One account for every ZARVA service.</p>
+
+      <div className="card stack">
+        {providers && <GoogleButton google={providers.google} onToken={onGoogle} />}
+        {providers?.google.mode !== "off" && <div className="divider"><span>or</span></div>}
+
+        <div className="segmented" role="tablist" aria-label="Sign-in method">
+          <button type="button" role="tab" aria-selected={method === "phone"} className={method === "phone" ? "on" : ""} onClick={() => setMethod("phone")}>Mobile</button>
+          <button type="button" role="tab" aria-selected={method === "email"} className={method === "email" ? "on" : ""} onClick={() => setMethod("email")}>Email</button>
+        </div>
+
+        {method === "phone" ? (
+          <CodeForm key="phone" kind="phone" onSend={(p) => api.requestOtp(p)} onVerify={async (p, c) => done(await api.verifyOtp(p, c))} />
+        ) : (
+          <CodeForm key="email" kind="email" onSend={(e) => api.requestEmailCode(e)} onVerify={async (e, c) => done(await api.verifyEmailCode(e, c))} />
+        )}
+      </div>
+      <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>No password needed. We send a one-time code each time you sign in.</p>
     </div>
   );
 }

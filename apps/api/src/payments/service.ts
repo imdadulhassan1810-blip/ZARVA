@@ -55,6 +55,8 @@ export class PaymentService {
     }
     const user = await this.db.query.users.findFirst({ where: eq(users.id, input.userId) });
     if (!user) throw notFound("User");
+    // Pros and support must be able to call the customer, so every paid order needs a verified mobile.
+    if (!user.phone) throw new AppError(403, "phone_required", "Add and verify your mobile number before booking");
 
     const [row] = await this.db
       .insert(payments)

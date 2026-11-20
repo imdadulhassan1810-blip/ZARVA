@@ -2,6 +2,7 @@ import { phoneSchema } from "@zarva/core";
 import { MockProvider } from "@zarva/payments";
 import { buildApp } from "../src/app";
 import { MemoryOtpSender } from "../src/auth/otp-sender";
+import { MemoryEmailSender } from "../src/auth/email-sender";
 import { createDb } from "../src/db/client";
 import { loadConfig } from "../src/lib/config";
 import { seedHomeCatalog } from "../src/modules/home/seed";
@@ -14,9 +15,10 @@ export async function setupTestApp(env: Record<string, string> = {}, opts: { now
   const config = loadConfig({ NODE_ENV: "test", DATABASE_URL: url, JWT_SECRET: "test-secret-test-secret-test-secret-123", ...env });
   const otp = new MemoryOtpSender();
   const provider = new MockProvider();
-  const app = await buildApp({ db, config, otpSender: otp, paymentProvider: provider, now: opts.now });
+  const mail = new MemoryEmailSender();
+  const app = await buildApp({ db, config, otpSender: otp, emailSender: mail, paymentProvider: provider, now: opts.now });
   return {
-    app, db, sql, otp, provider,
+    app, db, sql, otp, mail, provider,
     async close() {
       await app.close();
       await sql.end();

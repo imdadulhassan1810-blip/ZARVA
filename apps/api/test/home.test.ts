@@ -334,3 +334,20 @@ describe("home services: admin", () => {
     expect(cx.body.booking.status).toBe("cancelled");
   });
 });
+
+describe("home services: phone required", () => {
+  it("a Google account without a phone cannot book, even pay-after-service, until it adds one", async () => {
+    await makePro("9000000001", ["electrician"]);
+    const g = await t.app.inject({ method: "POST", url: "/v1/auth/google", payload: { idToken: "mock:riya@gmail.com:Riya Sen" } });
+    const body = g.json();
+    const s = { ...body, headers: { authorization: `Bearer ${body.accessToken}` } } as Session;
+    const r = await book(s, { payMode: "after_service" });
+    expect(r.status).toBe(403);
+    expect(r.body.error.code).toBe("phone_required");
+
+    await req("POST", "/v1/me/phone/request", s, { phone: "9876543210" });
+    await req("POST", "/v1/me/phone/verify", s, { phone: "9876543210", code: t.otp.last.get("+919876543210") });
+    const ok = await book(s, { payMode: "after_service" });
+    expect(ok.status).toBe(201);
+  });
+});

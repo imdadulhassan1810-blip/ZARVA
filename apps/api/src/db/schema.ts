@@ -17,10 +17,19 @@ export const paymentStatusEnum = pgEnum("payment_status", [
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
-  /** E.164, e.g. +919876543210 */
-  phone: text("phone").notNull().unique(),
+  /**
+   * E.164, e.g. +919876543210. Only ever set after the number is verified by OTP.
+   * Null for people who signed up with Google or email and have not added a phone yet;
+   * a verified phone is required before any booking or payment.
+   */
+  phone: text("phone").unique(),
+  phoneVerifiedAt: timestamp("phone_verified_at", { withTimezone: true }),
   name: text("name"),
-  email: text("email"),
+  /** Lower-case. Only ever set after the address is verified (email code or Google). */
+  email: text("email").unique(),
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+  /** Google account id ("sub" claim). Stable even if the person changes their Gmail address. */
+  googleSub: text("google_sub").unique(),
   preferredLanguage: languageEnum("preferred_language").notNull().default("en"),
   status: userStatusEnum("status").notNull().default("active"),
   ...timestamps,
@@ -30,7 +39,9 @@ export const otpChallenges = pgTable(
   "otp_challenges",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    phone: text("phone").notNull(),
+    /** Exactly one of phone / email is set: where the code was sent. */
+    phone: text("phone"),
+    email: text("email"),
     codeHash: text("code_hash").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     attempts: integer("attempts").notNull().default(0),
@@ -38,7 +49,7 @@ export const otpChallenges = pgTable(
     ip: text("ip"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("otp_phone_created_idx").on(t.phone, t.createdAt)],
+  (t) => [index("otp_phone_created_idx").on(t.phone, t.createdAt), index("otp_email_created_idx").on(t.email, t.createdAt)],
 );
 
 /** One row per logged-in device. The refresh token is stored only as a SHA-256 hash. */

@@ -5,6 +5,8 @@ import { parseEnabledModules, type ModuleStatus } from "@zarva/core";
 import { InvalidSignatureError, MockProvider, type PaymentProvider } from "@zarva/payments";
 import { AuthService } from "./auth/service";
 import type { OtpSender } from "./auth/otp-sender";
+import { ConsoleEmailSender, type EmailSender } from "./auth/email-sender";
+import { LiveGoogleVerifier, MockGoogleVerifier, type GoogleVerifier } from "./auth/google";
 import { verifyAccessToken } from "./auth/tokens";
 import type { Db } from "./db/client";
 import { AppError, unauthorized } from "./lib/errors";
@@ -35,6 +37,9 @@ export interface AppDeps {
   db: Db;
   config: Config;
   otpSender: OtpSender;
+  emailSender?: EmailSender;
+  /** Defaults from config: live with GOOGLE_CLIENT_ID, demo in development without it, off in production without it. */
+  googleVerifier?: GoogleVerifier | null;
   paymentProvider: PaymentProvider;
   logger?: boolean;
   now?: () => Date;
@@ -57,7 +62,23 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(helmet);
   await app.register(cors, { origin: deps.config.CORS_ORIGINS.split(",").map((s) => s.trim()) });
 
-  const auth = new AuthService(deps.db, deps.config.JWT_SECRET, deps.otpSender);
+  const googleIds = deps.config.GOOGLE_CLIENT_ID.split(",").map((s) => s.trim()).filter(Boolean);
+  const google =
+    deps.googleVerifier !== undefined
+      ? deps.googleVerifier
+      : googleIds.length > 0
+        ? new LiveGoogleVerifier(googleIds)
+        : deps.config.NODE_ENV === "production"
+          ? null
+          : new MockGoogleVerifier();
+  const auth = new AuthService({
+    db: deps.db,
+    secret: deps.config.JWT_SECRET,
+    sms: deps.otpSender,
+    email: deps.emailSender ?? new ConsoleEmailSender(),
+    google,
+    now: deps.now,
+  });
   app.decorate("db", deps.db);
   app.decorate("config", deps.config);
   app.decorate("now", deps.now ?? (() => new Date()));

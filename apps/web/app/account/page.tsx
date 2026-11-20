@@ -2,6 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { addressInputSchema, formatPhone, type Address, type PublicUser } from "@zarva/core";
+import { CodeForm } from "../../components/CodeForm";
 import { api, isSignedIn } from "../../lib/api";
 
 const emptyAddress = { label: "home", name: "", phone: "", line1: "", line2: "", landmark: "", city: "", state: "West Bengal", pincode: "" };
@@ -11,7 +12,7 @@ export default function Account() {
   const [user, setUser] = useState<PublicUser | null>(null);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [adding2, setAdding2] = useState<"phone" | "email" | null>(null);
   const [lang, setLang] = useState<PublicUser["preferredLanguage"]>("en");
   const [draft, setDraft] = useState(emptyAddress);
   const [adding, setAdding] = useState(false);
@@ -25,7 +26,6 @@ export default function Account() {
       const [{ user }, { addresses }] = await Promise.all([api.me(), api.listAddresses()]);
       setUser(user);
       setName(user.name ?? "");
-      setEmail(user.email ?? "");
       setLang(user.preferredLanguage);
       setAddresses(addresses);
     } catch {
@@ -46,7 +46,7 @@ export default function Account() {
     e.preventDefault();
     setError(null);
     try {
-      const r = await api.updateMe({ name: name.trim() || undefined, email: email.trim() || null, preferredLanguage: lang });
+      const r = await api.updateMe({ name: name.trim() || undefined, preferredLanguage: lang });
       setUser(r.user);
       setMsg("Profile saved");
     } catch (err) {
@@ -80,13 +80,45 @@ export default function Account() {
   return (
     <div style={{ maxWidth: 640, margin: "0 auto 48px" }}>
       <h1>{welcome ? "Welcome to ZARVA" : "Your account"}</h1>
-      {next && <p><a className="btn" href={next}>Continue booking →</a></p>}
-      <p className="muted">{formatPhone(user.phone)}</p>
+      {!user.phone && (
+        <div className="notice" role="status">
+          <strong>Add your mobile number to book services.</strong> Our professionals call you before they arrive, so every booking needs a verified number.
+          {adding2 !== "phone" && <div style={{ marginTop: 8 }}><button className="btn" onClick={() => setAdding2("phone")}>Add mobile number</button></div>}
+        </div>
+      )}
+      {next && user.phone && <p><a className="btn" href={next}>Continue booking →</a></p>}
+
+      <h2>Sign-in &amp; contact</h2>
+      <div className="card stack">
+        <div className="row" style={{ alignItems: "center" }}>
+          <div>
+            <div className="muted" style={{ fontSize: 13 }}>Mobile</div>
+            {user.phone ? <div>{formatPhone(user.phone)} <span className="verified">✓ Verified</span></div> : <div className="muted">Not added</div>}
+          </div>
+          {!user.phone && adding2 !== "phone" && <button className="btn btn-ghost" style={{ flex: "0 0 auto" }} onClick={() => setAdding2("phone")}>Add</button>}
+        </div>
+        {adding2 === "phone" && (
+          <CodeForm kind="phone" submitLabel="Add number" onSend={(p) => api.requestPhoneLink(p)} onVerify={async (p, c) => { setUser((await api.verifyPhoneLink(p, c)).user); setAdding2(null); }} />
+        )}
+        <div className="row" style={{ alignItems: "center" }}>
+          <div>
+            <div className="muted" style={{ fontSize: 13 }}>Email</div>
+            {user.email ? <div>{user.email} <span className="verified">✓ Verified</span></div> : <div className="muted">Not added</div>}
+          </div>
+          {!user.email && adding2 !== "email" && <button className="btn btn-ghost" style={{ flex: "0 0 auto" }} onClick={() => setAdding2("email")}>Add</button>}
+        </div>
+        {adding2 === "email" && (
+          <CodeForm kind="email" submitLabel="Add email" onSend={(e) => api.requestEmailLink(e)} onVerify={async (e, c) => { setUser((await api.verifyEmailLink(e, c)).user); setAdding2(null); }} />
+        )}
+        <div>
+          <div className="muted" style={{ fontSize: 13 }}>Google</div>
+          <div>{user.hasGoogle ? <span className="verified">✓ Connected</span> : <span className="muted">Not connected. Sign in with Google once to connect it (same email).</span>}</div>
+        </div>
+      </div>
 
       <h2>Profile</h2>
       <form className="card stack" onSubmit={saveProfile}>
         <label>Name<input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /></label>
-        <label>Email (optional)<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" /></label>
         <label>
           Language
           <select value={lang} onChange={(e) => setLang(e.target.value as typeof lang)}>

@@ -1,4 +1,4 @@
-import type { Address, AuthTokens, PublicUser } from "./api-types";
+import type { Address, AuthProviders, AuthTokens, LoginResult, PublicUser } from "./api-types";
 import type { ModuleStatus } from "./modules";
 import type { AddressInput, ProfileUpdate } from "./schemas";
 import type {
@@ -58,13 +58,23 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
     }
   }
 
+  async function login(path: string, body: unknown): Promise<LoginResult> {
+    const r = await raw<LoginResult>("POST", path, body, false);
+    store.set({ accessToken: r.accessToken, refreshToken: r.refreshToken, expiresIn: r.expiresIn });
+    return r;
+  }
+
   return {
     requestOtp: (phone: string) => raw<{ sent: true; retryAfter: number }>("POST", "/v1/auth/otp/request", { phone }, false),
-    verifyOtp: async (phone: string, code: string) => {
-      const r = await raw<AuthTokens & { user: PublicUser; isNewUser: boolean }>("POST", "/v1/auth/otp/verify", { phone, code }, false);
-      store.set({ accessToken: r.accessToken, refreshToken: r.refreshToken, expiresIn: r.expiresIn });
-      return r;
-    },
+    verifyOtp: (phone: string, code: string) => login("/v1/auth/otp/verify", { phone, code }),
+    providers: () => raw<AuthProviders>("GET", "/v1/auth/providers", undefined, false),
+    requestEmailCode: (email: string) => raw<{ sent: true; retryAfter: number }>("POST", "/v1/auth/email/request", { email }, false),
+    verifyEmailCode: (email: string, code: string) => login("/v1/auth/email/verify", { email, code }),
+    googleLogin: (idToken: string) => login("/v1/auth/google", { idToken }),
+    requestPhoneLink: (phone: string) => call<{ sent: true; retryAfter: number }>("POST", "/v1/me/phone/request", { phone }),
+    verifyPhoneLink: (phone: string, code: string) => call<{ user: PublicUser }>("POST", "/v1/me/phone/verify", { phone, code }),
+    requestEmailLink: (email: string) => call<{ sent: true; retryAfter: number }>("POST", "/v1/me/email/request", { email }),
+    verifyEmailLink: (email: string, code: string) => call<{ user: PublicUser }>("POST", "/v1/me/email/verify", { email, code }),
     logout: async () => {
       const t = store.get();
       if (t) await raw("POST", "/v1/auth/logout", { refreshToken: t.refreshToken }, false).catch(() => undefined);

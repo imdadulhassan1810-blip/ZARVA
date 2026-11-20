@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { formatPhone, phoneSchema, addressInputSchema, ModuleRegistry, parseEnabledModules } from "./index";
+import { emailSchema, formatPhone, phoneSchema, addressInputSchema, ModuleRegistry, parseEnabledModules } from "./index";
 
 describe("phoneSchema", () => {
   it.each(["9876543210", "+91 98765 43210", "09876543210", "919876543210", "+91-98765-43210"])("normalises %s", (p) => {
@@ -63,4 +63,9 @@ describe("home services rules", () => {
     expect(formatRupees(4950)).toBe("₹49.50");
     expect(bookingCode("7c9e6679-7425-40de-944b-e07fc1f90ae7")).toMatch(/^ZH-[2-9A-HJ-NP-Z]{6}$/);
   });
+});
+
+it("normalises email to lower case and rejects junk", () => {
+  expect(emailSchema.parse("  Imdad@Gmail.COM ")).toBe("imdad@gmail.com");
+  expect(emailSchema.safeParse("not-an-email").success).toBe(false);
 });

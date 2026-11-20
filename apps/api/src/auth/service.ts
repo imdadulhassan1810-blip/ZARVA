@@ -1,8 +1,10 @@
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
-import type { AuthTokens, PublicUser } from "@zarva/core";
+import type { AuthTokens, LoginResult, PublicUser } from "@zarva/core";
 import type { Db } from "../db/client";
 import { otpChallenges, sessions, users } from "../db/schema";
 import { AppError, badRequest, tooMany, unauthorized } from "../lib/errors";
+import type { EmailSender } from "./email-sender";
+import type { GoogleVerifier } from "./google";
 import type { OtpSender } from "./otp-sender";
 import {
   ACCESS_TTL_SECONDS, REFRESH_TTL_DAYS, generateOtp, hashOtp, newRefreshToken, sha256, signAccessToken,
@@ -13,27 +15,63 @@ export const OTP_RESEND_SECONDS = 30;
 export const OTP_MAX_PER_HOUR = 5;
 export const OTP_MAX_ATTEMPTS = 5;
 
-export function toPublicUser(u: typeof users.$inferSelect): PublicUser {
+type UserRow = typeof users.$inferSelect;
+/** Where a one-time code goes. Phone is E.164, email is lower-case; both already validated. */
+export type CodeTarget = { kind: "phone"; value: string } | { kind: "email"; value: string };
+
+export function toPublicUser(u: UserRow): PublicUser {
   return {
     id: u.id,
     phone: u.phone,
     name: u.name,
     email: u.email,
+    hasGoogle: u.googleSub !== null,
     preferredLanguage: u.preferredLanguage,
     createdAt: u.createdAt.toISOString(),
   };
 }
 
-export class AuthService {
-  constructor(private db: Db, private secret: string, private sender: OtpSender, private now: () => Date = () => new Date()) {}
+export interface AuthDeps {
+  db: Db;
+  secret: string;
+  sms: OtpSender;
+  email: EmailSender;
+  google: GoogleVerifier | null;
+  now?: () => Date;
+}
 
-  async requestOtp(phone: string, ip?: string): Promise<{ retryAfter: number }> {
+/**
+ * Three ways in: phone OTP, email code, Google. They all land on the same users table.
+ * A phone or email is stored on a user only after it is verified, so "the user with this
+ * phone/email" is always unambiguous and accounts can't be hijacked by typing someone else's.
+ */
+export class AuthService {
+  private db: Db;
+  private secret: string;
+  private now: () => Date;
+  constructor(private deps: AuthDeps) {
+    this.db = deps.db;
+    this.secret = deps.secret;
+    this.now = deps.now ?? (() => new Date());
+  }
+
+  get googleMode(): "live" | "mock" | "off" {
+    return this.deps.google?.mode ?? "off";
+  }
+
+  private column(t: CodeTarget) {
+    return t.kind === "phone" ? otpChallenges.phone : otpChallenges.email;
+  }
+
+  /** Sends a 6-digit code by SMS or email, with resend and hourly limits per destination. */
+  async requestCode(target: CodeTarget, ip?: string): Promise<{ retryAfter: number }> {
     const now = this.now();
+    const col = this.column(target);
     const hourAgo = new Date(now.getTime() - 3600_000);
     const recent = await this.db
       .select({ createdAt: otpChallenges.createdAt })
       .from(otpChallenges)
-      .where(and(eq(otpChallenges.phone, phone), gt(otpChallenges.createdAt, hourAgo)))
+      .where(and(eq(col, target.value), gt(otpChallenges.createdAt, hourAgo)))
       .orderBy(desc(otpChallenges.createdAt));
 
     const last = recent[0];
@@ -41,61 +79,132 @@ export class AuthService {
       const elapsed = (now.getTime() - last.createdAt.getTime()) / 1000;
       if (elapsed < OTP_RESEND_SECONDS) {
         const wait = Math.ceil(OTP_RESEND_SECONDS - elapsed);
-        throw tooMany(`Please wait ${wait}s before requesting another OTP`, wait);
+        throw tooMany(`Please wait ${wait}s before requesting another code`, wait);
       }
     }
-    if (recent.length >= OTP_MAX_PER_HOUR) throw tooMany("Too many OTP requests. Try again in an hour", 3600);
+    if (recent.length >= OTP_MAX_PER_HOUR) throw tooMany("Too many code requests. Try again in an hour", 3600);
 
     const code = generateOtp();
-    // Invalidate older open challenges so only the newest code works.
-    await this.db
-      .update(otpChallenges)
-      .set({ consumedAt: now })
-      .where(and(eq(otpChallenges.phone, phone), isNull(otpChallenges.consumedAt)));
+    // Only the newest code works.
+    await this.db.update(otpChallenges).set({ consumedAt: now }).where(and(eq(col, target.value), isNull(otpChallenges.consumedAt)));
     await this.db.insert(otpChallenges).values({
-      phone,
-      codeHash: hashOtp(this.secret, phone, code),
+      phone: target.kind === "phone" ? target.value : null,
+      email: target.kind === "email" ? target.value : null,
+      codeHash: hashOtp(this.secret, target.value, code),
       expiresAt: new Date(now.getTime() + OTP_TTL_SECONDS * 1000),
       ip,
       createdAt: now,
     });
-    await this.sender.send(phone, code);
+    if (target.kind === "phone") await this.deps.sms.send(target.value, code);
+    else await this.deps.email.sendCode(target.value, code);
     return { retryAfter: OTP_RESEND_SECONDS };
   }
 
-  async verifyOtp(phone: string, code: string, deviceName?: string): Promise<AuthTokens & { user: PublicUser; isNewUser: boolean }> {
+  /** Checks and consumes a code. Throws on wrong, expired, reused or locked codes. */
+  private async consumeCode(target: CodeTarget, code: string): Promise<void> {
     const now = this.now();
+    const col = this.column(target);
     const [challenge] = await this.db
       .select()
       .from(otpChallenges)
-      .where(and(eq(otpChallenges.phone, phone), isNull(otpChallenges.consumedAt), gt(otpChallenges.expiresAt, now)))
+      .where(and(eq(col, target.value), isNull(otpChallenges.consumedAt), gt(otpChallenges.expiresAt, now)))
       .orderBy(desc(otpChallenges.createdAt))
       .limit(1);
-    if (!challenge) throw badRequest("otp_expired", "OTP expired or not requested. Request a new one");
-    if (challenge.attempts >= OTP_MAX_ATTEMPTS) throw badRequest("otp_locked", "Too many wrong attempts. Request a new OTP");
+    if (!challenge) throw badRequest("otp_expired", "Code expired or not requested. Request a new one");
+    if (challenge.attempts >= OTP_MAX_ATTEMPTS) throw badRequest("otp_locked", "Too many wrong attempts. Request a new code");
 
-    if (challenge.codeHash !== hashOtp(this.secret, phone, code)) {
-      await this.db
-        .update(otpChallenges)
-        .set({ attempts: sql`${otpChallenges.attempts} + 1` })
-        .where(eq(otpChallenges.id, challenge.id));
-      throw badRequest("otp_invalid", "Incorrect OTP");
+    if (challenge.codeHash !== hashOtp(this.secret, target.value, code)) {
+      await this.db.update(otpChallenges).set({ attempts: sql`${otpChallenges.attempts} + 1` }).where(eq(otpChallenges.id, challenge.id));
+      throw badRequest("otp_invalid", "Incorrect code");
     }
-
-    // Consume atomically so the same code cannot be used twice in a race.
+    // Atomic, so the same code cannot be used twice in a race.
     const consumed = await this.db
       .update(otpChallenges)
       .set({ consumedAt: now })
       .where(and(eq(otpChallenges.id, challenge.id), isNull(otpChallenges.consumedAt)))
       .returning({ id: otpChallenges.id });
-    if (consumed.length === 0) throw badRequest("otp_expired", "OTP already used");
+    if (consumed.length === 0) throw badRequest("otp_expired", "Code already used");
+  }
 
-    const inserted = await this.db.insert(users).values({ phone }).onConflictDoNothing({ target: users.phone }).returning();
-    const isNewUser = inserted.length > 0;
-    const user = inserted[0] ?? (await this.db.query.users.findFirst({ where: eq(users.phone, phone) }));
+  // ----- Phone (kept as named methods: existing callers and tests use them) -----
+  requestOtp(phone: string, ip?: string) {
+    return this.requestCode({ kind: "phone", value: phone }, ip);
+  }
+  verifyOtp(phone: string, code: string, deviceName?: string) {
+    return this.loginWithCode({ kind: "phone", value: phone }, code, deviceName);
+  }
+
+  /** Sign in (or sign up) with a phone or email code. */
+  async loginWithCode(target: CodeTarget, code: string, deviceName?: string): Promise<LoginResult> {
+    await this.consumeCode(target, code);
+    const now = this.now();
+    const values = target.kind === "phone" ? { phone: target.value, phoneVerifiedAt: now } : { email: target.value, emailVerifiedAt: now };
+    const conflict = target.kind === "phone" ? users.phone : users.email;
+    const inserted = await this.db.insert(users).values(values).onConflictDoNothing({ target: conflict }).returning();
+    const user = inserted[0] ?? (await this.db.query.users.findFirst({ where: eq(conflict, target.value) }));
     if (!user) throw new AppError(500, "internal", "User not found after upsert");
-    if (user.status !== "active") throw new AppError(403, "account_blocked", "This account is not active");
+    return this.finishLogin(user, inserted.length > 0, deviceName);
+  }
 
+  /**
+   * Google: find by Google id; else link to the account that already owns this verified email;
+   * else create a new account.
+   */
+  async loginWithGoogle(idToken: string, deviceName?: string): Promise<LoginResult> {
+    if (!this.deps.google) throw new AppError(404, "google_disabled", "Google sign-in is not enabled");
+    const g = await this.deps.google.verify(idToken);
+    const email = g.email && g.emailVerified ? g.email : null;
+    const now = this.now();
+
+    let user = await this.db.query.users.findFirst({ where: eq(users.googleSub, g.sub) });
+    let isNew = false;
+    if (!user && email) {
+      const byEmail = await this.db.query.users.findFirst({ where: eq(users.email, email) });
+      if (byEmail) {
+        [user] = await this.db.update(users).set({ googleSub: g.sub, updatedAt: now }).where(eq(users.id, byEmail.id)).returning();
+      }
+    }
+    if (!user) {
+      const inserted = await this.db
+        .insert(users)
+        .values({ googleSub: g.sub, email, emailVerifiedAt: email ? now : null, name: g.name })
+        .onConflictDoNothing()
+        .returning();
+      user = inserted[0] ?? (await this.db.query.users.findFirst({ where: eq(users.googleSub, g.sub) }));
+      isNew = inserted.length > 0;
+    }
+    if (!user) throw new AppError(500, "internal", "User not found after Google sign-in");
+    return this.finishLogin(user, isNew, deviceName);
+  }
+
+  /** Add a verified phone or email to a signed-in account. */
+  async linkWithCode(userId: string, target: CodeTarget, code: string): Promise<PublicUser> {
+    await this.assertLinkable(userId, target);
+    await this.consumeCode(target, code);
+    const now = this.now();
+    const set = target.kind === "phone" ? { phone: target.value, phoneVerifiedAt: now } : { email: target.value, emailVerifiedAt: now };
+    try {
+      const [u] = await this.db.update(users).set({ ...set, updatedAt: now }).where(eq(users.id, userId)).returning();
+      return toPublicUser(u!);
+    } catch (e) {
+      // Unique violation: someone else linked it between our check and the update.
+      if ((e as { code?: string }).code === "23505") throw new AppError(409, `${target.kind}_in_use`, "Already linked to another account");
+      throw e;
+    }
+  }
+
+  /** Before sending a link code, refuse early if another account owns it (saves an SMS). */
+  async assertLinkable(userId: string, target: CodeTarget): Promise<void> {
+    const col = target.kind === "phone" ? users.phone : users.email;
+    const owner = await this.db.query.users.findFirst({ where: eq(col, target.value), columns: { id: true } });
+    if (owner && owner.id !== userId) {
+      const what = target.kind === "phone" ? "mobile number" : "email";
+      throw new AppError(409, `${target.kind}_in_use`, `This ${what} is already linked to another ZARVA account. Sign in with it instead.`);
+    }
+  }
+
+  private async finishLogin(user: UserRow, isNewUser: boolean, deviceName?: string): Promise<LoginResult> {
+    if (user.status !== "active") throw new AppError(403, "account_blocked", "This account is not active");
     const tokens = await this.createSession(user.id, deviceName);
     return { ...tokens, user: toPublicUser(user), isNewUser };
   }

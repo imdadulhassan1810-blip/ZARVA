@@ -31,6 +31,10 @@ export default function Checkout() {
     if (!isSignedIn()) return router.replace(`/login?next=${encodeURIComponent("/home-services/checkout")}`);
     const c = loadCart();
     if (!c.categoryId || Object.keys(c.items).length === 0) return router.replace("/home-services");
+    // Bookings need a verified mobile: send phone-less accounts (Google/email sign-ups) to add one first.
+    api.me().then((r) => {
+      if (!r.user.phone) router.replace(`/account?next=${encodeURIComponent("/home-services/checkout")}`);
+    }).catch(() => undefined);
     setCart(c);
     api.home.catalog(c.cityId).then((r) => setServices(r.services)).catch((e: Error) => setError(e.message));
     api.listAddresses().then((r) => {

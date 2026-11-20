@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Image, ScrollView, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { logoRules, verticalIds, verticals } from "@zarva/brand";
@@ -7,8 +7,9 @@ import { formatPhone, phoneSchema, type ModuleStatus, type PublicUser } from "@z
 import { api, loadTokens } from "./api";
 import { useTheme, type Theme } from "./theme";
 import { Button, Field, Loading } from "./ui";
+import { HomeServices } from "./HomeServices";
 
-type Screen = "loading" | "login" | "home";
+type Screen = "loading" | "login" | "home" | "home-services";
 
 export default function App() {
   const t = useTheme();
@@ -22,7 +23,8 @@ export default function App() {
         <StatusBar style={t.dark ? "light" : "dark"} />
         {screen === "loading" && <Loading />}
         {screen === "login" && <Login t={t} onDone={() => setScreen("home")} />}
-        {screen === "home" && <Home t={t} onSignOut={() => setScreen("login")} />}
+        {screen === "home" && <Home t={t} onSignOut={() => setScreen("login")} onOpen={(id) => id === "home" && setScreen("home-services")} />}
+        {screen === "home-services" && <HomeServices t={t} onExit={() => setScreen("home")} />}
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -74,7 +76,7 @@ function Login({ t, onDone }: { t: Theme; onDone: () => void }) {
   );
 }
 
-function Home({ t, onSignOut }: { t: Theme; onSignOut: () => void }) {
+function Home({ t, onSignOut, onOpen }: { t: Theme; onSignOut: () => void; onOpen: (id: string) => void }) {
   const [user, setUser] = useState<PublicUser | null>(null);
   const [modules, setModules] = useState<ModuleStatus[]>([]);
   useEffect(() => {
@@ -94,11 +96,11 @@ function Home({ t, onSignOut }: { t: Theme; onSignOut: () => void }) {
         {verticalIds.map((id) => {
           const m = byId.get(id);
           return (
-            <View key={id} style={{ width: "47%", minHeight: 120, borderRadius: t.radius.lg, padding: 14, justifyContent: "flex-end", backgroundColor: verticals[id].flat }}>
+            <Pressable key={id} accessibilityRole="button" disabled={!m?.enabled} onPress={() => onOpen(id)} style={{ width: "47%", minHeight: 120, borderRadius: t.radius.lg, padding: 14, justifyContent: "flex-end", backgroundColor: verticals[id].flat }}>
               {!m?.enabled && <Text style={{ position: "absolute", top: 10, right: 10, color: "#fff", fontSize: 11, fontWeight: "600" }}>Coming soon</Text>}
               <Text style={{ color: "#fff", fontWeight: "700", fontSize: t.fontSize.lg }}>{verticals[id].label}</Text>
               <Text style={{ color: "#fff", fontSize: t.fontSize.xs }}>{m?.tagline ?? ""}</Text>
-            </View>
+            </Pressable>
           );
         })}
       </View>

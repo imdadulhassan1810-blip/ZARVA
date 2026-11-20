@@ -9,3 +9,4 @@ export function createDb(url: string) {
 }
 export type Db = ReturnType<typeof createDb>["db"];
 export { schema };
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];

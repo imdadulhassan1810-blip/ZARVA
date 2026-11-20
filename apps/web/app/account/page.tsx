@@ -18,6 +18,7 @@ export default function Account() {
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [welcome, setWelcome] = useState(false);
+  const [next, setNext] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -34,7 +35,10 @@ export default function Account() {
 
   useEffect(() => {
     if (!isSignedIn()) return router.replace("/login");
-    setWelcome(new URLSearchParams(window.location.search).has("welcome"));
+    const q = new URLSearchParams(window.location.search);
+    setWelcome(q.has("welcome"));
+    const n = q.get("next");
+    setNext(n && n.startsWith("/") && !n.startsWith("//") ? n : null);
     void load();
   }, [load, router]);
 
@@ -76,6 +80,7 @@ export default function Account() {
   return (
     <div style={{ maxWidth: 640, margin: "0 auto 48px" }}>
       <h1>{welcome ? "Welcome to ZARVA" : "Your account"}</h1>
+      {next && <p><a className="btn" href={next}>Continue booking →</a></p>}
       <p className="muted">{formatPhone(user.phone)}</p>
 
       <h2>Profile</h2>

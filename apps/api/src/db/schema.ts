@@ -125,3 +125,6 @@ export const paymentEvents = pgTable(
   },
   (t) => [uniqueIndex("payment_events_dedupe_idx").on(t.provider, t.eventId)],
 );
+
+// Vertical modules own their tables (prefixed <id>_) but share one schema for migrations and typed queries.
+export * from "../modules/home/schema";

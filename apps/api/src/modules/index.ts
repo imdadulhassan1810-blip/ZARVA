@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { verticals, type VerticalId } from "@zarva/brand";
 import { ModuleRegistry, type ZarvaModule } from "@zarva/core";
+import { homeModule } from "./home";
 
 /**
  * Every vertical lives in its own folder under src/modules/<id>/ and exports a ZarvaModule.
- * Today each is a placeholder that only mounts a status route: no vertical flows yet.
+ * Built so far: home (home services). The rest are placeholders that only mount a status route.
  * To build a vertical: replace its placeholder with a real module (own tables prefixed
  * `<id>_`, own routes under ctx.prefix), take money only through app.services.payments,
  * then add its id to ENABLED_MODULES.
@@ -28,6 +29,7 @@ function placeholder(id: VerticalId): ZarvaModule<FastifyInstance> {
 
 export function buildRegistry(): ModuleRegistry<FastifyInstance> {
   const reg = new ModuleRegistry<FastifyInstance>();
-  for (const id of Object.keys(verticals) as VerticalId[]) reg.add(placeholder(id));
+  const built: Partial<Record<VerticalId, ZarvaModule<FastifyInstance>>> = { home: homeModule };
+  for (const id of Object.keys(verticals) as VerticalId[]) reg.add(built[id] ?? placeholder(id));
   return reg;
 }

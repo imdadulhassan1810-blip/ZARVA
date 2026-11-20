@@ -2,7 +2,7 @@
 
 *Har Zaroorat Ek Thikana.* One app for everyday services: food, shopping, events, travel and home services.
 
-This repository is the **vertical-agnostic foundation**: sign-in, profiles, addresses, payments, design system and a module slot for each vertical. No vertical (food, home services, ...) is built yet; each shows as "Coming soon" until its module is written and switched on.
+This repository is the **vertical-agnostic foundation** (sign-in, profiles, addresses, payments, design system, a module slot per vertical) plus the first vertical, **home services**, launching in Durgapur. See [docs/home-services.md](docs/home-services.md). Other verticals show as "Coming soon" until their module is written and switched on.
 
 ## Stack
 

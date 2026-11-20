@@ -42,7 +42,10 @@ export default function Login() {
     setBusy(true);
     try {
       const r = await api.verifyOtp(phone, code);
-      router.replace(r.isNewUser || !r.user.name ? "/account?welcome=1" : "/");
+      // Only same-site paths, so ?next= can't bounce people to another website.
+      const next = new URLSearchParams(window.location.search).get("next");
+      const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+      router.replace(r.isNewUser || !r.user.name ? `/account?welcome=1${safeNext ? `&next=${encodeURIComponent(safeNext)}` : ""}` : safeNext ?? "/");
     } catch (err) {
       setError((err as Error).message);
     } finally {

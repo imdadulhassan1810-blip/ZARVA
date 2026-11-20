@@ -15,9 +15,12 @@ export function Header() {
       <Link href="/" aria-label="ZARVA home">
         <Logo width={128} />
       </Link>
-      <Link className="btn btn-ghost" href={signedIn ? "/account" : "/login"}>
-        {signedIn ? "Account" : "Sign in"}
-      </Link>
+      <nav style={{ display: "flex", gap: 8 }}>
+        {signedIn && <Link className="btn btn-ghost hide-sm" href="/home-services/bookings">Bookings</Link>}
+        <Link className="btn btn-ghost" href={signedIn ? "/account" : "/login"}>
+          {signedIn ? "Account" : "Sign in"}
+        </Link>
+      </nav>
     </header>
   );
 }

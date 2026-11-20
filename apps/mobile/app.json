@@ -1,41 +1,18 @@
 {
   "expo": {
-    "name": "OneApp",
-    "slug": "oneapp",
+    "name": "ZARVA",
+    "slug": "zarva",
+    "scheme": "zarva",
     "version": "0.1.0",
-    "scheme": "oneapp",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "cover",
-      "backgroundColor": "#5B3DF6"
-    },
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.oneapp.mobile"
-    },
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#F6F5FB",
+    "ios": { "bundleIdentifier": "in.zarva.app", "supportsTablet": false },
     "android": {
-      "package": "com.oneapp.mobile",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#5B3DF6"
-      }
+      "package": "in.zarva.app",
+      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#0F0B24" }
     },
-    "web": {
-      "bundler": "metro",
-      "favicon": "./assets/favicon.png"
-    },
-    "notification": {
-      "color": "#5B3DF6"
-    },
-    "plugins": [
-      "expo-notifications",
-      "expo-font"
-    ],
-    "extra": {
-      "apiUrl": "http://localhost:4000"
-    }
+    "extra": { "apiUrl": "http://localhost:4000" }
   }
 }

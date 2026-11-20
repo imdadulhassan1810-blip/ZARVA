@@ -4,28 +4,15 @@ Urban Company style bookings. Live in **Durgapur** (PIN 713201 to 713216). Asans
 
 ## Try it locally
 
-After the normal setup in the README:
-
-```bash
-# in .env
-ENABLED_MODULES=home
-ADMIN_PHONES=9999900000          # any number you will sign in with as admin
-
-pnpm db:migrate
-pnpm db:seed -- --demo           # catalogue + 8 demo professionals (never use --demo in production)
-pnpm dev:api
-pnpm dev:web
-```
-
-OTP codes print in the API terminal. Three roles to try:
+Nothing extra to set up. Run `pnpm dev` as in the README. On first start the API loads the Durgapur catalogue and, in the built-in demo database only, 8 demo professionals. Sign-in codes print in the terminal.
 
 | Role | Sign in as | Go to |
 |---|---|---|
-| Customer | any number | Home tile "Home services" → add to cart → checkout |
-| Professional | 9000000001 to 9000000008 (demo pros, see `seed-data.ts`) | `/pro` |
-| Admin | a number in `ADMIN_PHONES` | `/admin` |
+| Customer | any number, e.g. 98765 43210 | Home tile "Home services" → add to cart → checkout |
+| Professional | 90000 00001 to 90000 00008 (see `seed-data.ts` for who does what) | http://localhost:3000/pro |
+| Admin | 99999 00000 (local default; set `ADMIN_PHONES` for real numbers) | http://localhost:3000/admin |
 
-Payments use the mock provider in dev: "Pay now" succeeds instantly.
+Payments use the mock provider locally: "Pay now" succeeds instantly. To reload the catalogue after editing prices in `seed-data.ts`, run `pnpm db:seed` (add `-- --demo` for demo pros). To start over, stop the API and delete `apps/api/.data`.
 
 ## How it works
 

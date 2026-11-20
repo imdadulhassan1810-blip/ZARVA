@@ -199,6 +199,8 @@ export class HomeServicesService {
 
   /** Called by PaymentService inside its transaction whenever a home payment changes status. */
   private async onPayment(p: PaymentRow, tx: Tx): Promise<void> {
+    // referenceId is free text on the shared payments table; only our own booking ids are uuids.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.referenceId)) return;
     const b = await tx.query.homeBookings.findFirst({ where: eq(homeBookings.id, p.referenceId) });
     if (!b || b.paymentId !== p.id) return;
     if ((p.status === "authorized" || p.status === "captured") && b.status === "pending_payment") {

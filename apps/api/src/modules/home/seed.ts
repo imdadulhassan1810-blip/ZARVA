@@ -1,6 +1,7 @@
 import { inArray, sql } from "drizzle-orm";
 import { phoneSchema } from "@zarva/core";
-import { createDb, type Db } from "../../db/client";
+import type { Db } from "../../db/client";
+import { connectDb } from "../../db/connect";
 import { users } from "../../db/schema";
 import { categories, cities, demoPros } from "./seed-data";
 import { homeCategories, homeCities, homePros, homeServices } from "./schema";
@@ -48,16 +49,23 @@ export async function seedHomeDemoPros(db: Db): Promise<void> {
   }
 }
 
+/** Seeds the catalogue on first start so a fresh database is usable straight away. */
+export async function ensureHomeSeed(db: Db, opts: { demoPros: boolean }): Promise<{ seeded: boolean }> {
+  const [c] = await db.select({ n: sql<number>`count(*)::int` }).from(homeCities);
+  if ((c?.n ?? 0) > 0) return { seeded: false };
+  await seedHomeCatalog(db);
+  if (opts.demoPros) await seedHomeDemoPros(db);
+  return { seeded: true };
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL is not set");
   const withDemo = process.argv.includes("--demo");
   if (withDemo && process.env.NODE_ENV === "production") throw new Error("Refusing to create demo pros in production");
-  const { db, sql: conn } = createDb(url);
+  const { db, close } = await connectDb(process.env.DATABASE_URL || "pglite");
   await seedHomeCatalog(db);
   if (withDemo) await seedHomeDemoPros(db);
   const [n] = await db.select({ n: sql<number>`count(*)::int` }).from(homeServices);
   const pros = withDemo ? await db.select().from(homePros).where(inArray(homePros.cityId, ["durgapur"])) : [];
   console.log(`Home services seeded: ${n?.n} services${withDemo ? `, ${pros.length} demo pros (phones 90000 00001-08)` : ""}`);
-  await conn.end();
+  await close();
 }

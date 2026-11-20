@@ -1,6 +1,12 @@
 import type { Address, AuthTokens, PublicUser } from "./api-types";
 import type { ModuleStatus } from "./modules";
 import type { AddressInput, ProfileUpdate } from "./schemas";
+import type {
+  HomeBooking, HomeBookingStatus, HomeCategory, HomeCity, HomeCreateBooking, HomePro, HomeProApply, HomeService, HomeSlotDay,
+} from "./home";
+
+export interface HomePaymentStart { id: string; status: string; clientPayload: Record<string, unknown> }
+export interface PaymentConfirmation { providerOrderId: string; providerPaymentId: string; signature: string }
 
 export class ApiRequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -12,6 +18,8 @@ export interface TokenStore {
   get(): AuthTokens | null;
   set(tokens: AuthTokens | null): void;
 }
+
+const H = "/v1/m/home";
 
 /** Tiny typed client shared by web and mobile. Refreshes the access token once on 401. */
 export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: typeof fetch = fetch) {
@@ -69,6 +77,41 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
     updateAddress: (id: string, a: Partial<AddressInput>) => call<{ address: Address }>("PATCH", `/v1/me/addresses/${id}`, a),
     deleteAddress: (id: string) => call<void>("DELETE", `/v1/me/addresses/${id}`),
     modules: () => raw<{ modules: ModuleStatus[] }>("GET", "/v1/modules", undefined, false),
+    /** Dev only (mock payment provider): returns what the Razorpay checkout would hand back. */
+    mockPaymentSuccess: (providerOrderId: string) =>
+      raw<{ confirmation: PaymentConfirmation }>("POST", `/v1/payments/mock/${encodeURIComponent(providerOrderId)}/succeed`, undefined, false),
+
+    home: {
+      cities: () => raw<{ cities: HomeCity[] }>("GET", `${H}/cities`, undefined, false),
+      catalog: (city: string) =>
+        raw<{ city: HomeCity; categories: HomeCategory[]; services: HomeService[] }>("GET", `${H}/catalog?city=${encodeURIComponent(city)}`, undefined, false),
+      slots: (city: string, categoryId: string) =>
+        raw<{ days: HomeSlotDay[] }>("GET", `${H}/slots?city=${encodeURIComponent(city)}&categoryId=${categoryId}`, undefined, false),
+      createBooking: (b: HomeCreateBooking) => call<{ booking: HomeBooking; payment: HomePaymentStart | null }>("POST", `${H}/bookings`, b),
+      bookings: () => call<{ bookings: HomeBooking[] }>("GET", `${H}/bookings`),
+      booking: (id: string) => call<{ booking: HomeBooking }>("GET", `${H}/bookings/${id}`),
+      pay: (id: string) => call<{ booking: HomeBooking; payment: HomePaymentStart }>("POST", `${H}/bookings/${id}/pay`, {}),
+      confirmPayment: (id: string, c: PaymentConfirmation) => call<{ booking: HomeBooking }>("POST", `${H}/bookings/${id}/payment/confirm`, c),
+      cancel: (id: string, reason?: string) => call<{ booking: HomeBooking }>("POST", `${H}/bookings/${id}/cancel`, { reason }),
+
+      proMe: () => call<{ pro: HomePro | null }>("GET", `${H}/pro/me`),
+      proApply: (p: HomeProApply) => call<{ pro: HomePro }>("POST", `${H}/pro/apply`, p),
+      proJobs: () => call<{ available: HomeBooking[]; mine: HomeBooking[] }>("GET", `${H}/pro/jobs`),
+      proAccept: (id: string) => call<{ booking: HomeBooking }>("POST", `${H}/pro/jobs/${id}/accept`, {}),
+      proStatus: (id: string, status: "on_the_way" | "in_progress" | "completed", startCode?: string) =>
+        call<{ booking: HomeBooking }>("POST", `${H}/pro/jobs/${id}/status`, { status, startCode }),
+
+      admin: {
+        bookings: (status?: HomeBookingStatus) => call<{ bookings: HomeBooking[] }>("GET", `${H}/admin/bookings${status ? `?status=${status}` : ""}`),
+        assign: (id: string, proId: string) => call<{ booking: HomeBooking }>("POST", `${H}/admin/bookings/${id}/assign`, { proId }),
+        cancel: (id: string, reason: string) => call<{ booking: HomeBooking }>("POST", `${H}/admin/bookings/${id}/cancel`, { reason }),
+        pros: () => call<{ pros: HomePro[] }>("GET", `${H}/admin/pros`),
+        setProStatus: (id: string, status: HomePro["status"]) => call<{ pro: HomePro }>("PATCH", `${H}/admin/pros/${id}`, { status }),
+        services: () => call<{ services: HomeService[] }>("GET", `${H}/admin/services`),
+        updateService: (id: string, patch: { pricePaise?: number; active?: boolean }) =>
+          call<{ service: HomeService }>("PATCH", `${H}/admin/services/${id}`, patch),
+      },
+    },
   };
 }
 export type ApiClient = ReturnType<typeof createApiClient>;

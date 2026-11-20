@@ -9,6 +9,7 @@ export interface OtpSender {
 export class ConsoleOtpSender implements OtpSender {
   async send(phone: string, code: string) {
     console.log(`[otp] ${phone} -> ${code}`);
+    console.log(`\n  >>> OTP for ${phone}: ${code} <<<\n`);
   }
 }
 

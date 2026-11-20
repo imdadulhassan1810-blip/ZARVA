@@ -8,11 +8,17 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#F6F5FB",
-    "ios": { "bundleIdentifier": "in.zarva.app", "supportsTablet": false },
+    "ios": {
+      "bundleIdentifier": "in.zarva.app",
+      "supportsTablet": false
+    },
     "android": {
       "package": "in.zarva.app",
-      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#0F0B24" }
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F0B24"
+      }
     },
-    "extra": { "apiUrl": "http://localhost:4000" }
+    "extra": {}
   }
 }

@@ -12,6 +12,7 @@
     "dev:web": "pnpm --filter @zarva/web dev",
     "dev:mobile": "pnpm --filter @zarva/mobile start",
     "db:migrate": "pnpm --filter @zarva/api db:migrate",
+    "admin:2fa": "pnpm --filter @zarva/api admin:2fa",
     "db:seed": "pnpm --filter @zarva/api db:seed --",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",

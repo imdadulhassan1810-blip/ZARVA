@@ -16,6 +16,7 @@ import { PaymentService } from "./payments/service";
 import { authRoutes } from "./routes/auth";
 import { meRoutes } from "./routes/me";
 import { paymentRoutes } from "./routes/payments";
+import { registerAdminGuard } from "./admin/guard";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -23,6 +24,8 @@ declare module "fastify" {
     config: Config;
     services: { auth: AuthService; payments: PaymentService };
     requireAuth: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    /** Signed in + verified phone in ADMIN_PHONES + authenticator code (see admin/guard.ts). */
+    requireAdmin: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
     /** Current time. Injected so tests can move the clock. */
     now: () => Date;
   }
@@ -68,9 +71,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       ? deps.googleVerifier
       : googleIds.length > 0
         ? new LiveGoogleVerifier(googleIds)
-        : deps.config.NODE_ENV === "production"
-          ? null
-          : new MockGoogleVerifier();
+        : deps.config.devShortcuts
+          ? new MockGoogleVerifier()
+          : null;
   const auth = new AuthService({
     db: deps.db,
     secret: deps.config.JWT_SECRET,
@@ -113,11 +116,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.get("/health", async () => ({ ok: true }));
   await app.register(authRoutes);
+  registerAdminGuard(app);
   await app.register(meRoutes);
   await app.register(paymentRoutes);
 
   // Dev only: stands in for the Razorpay checkout sheet so the whole booking flow runs without keys.
-  if (deps.paymentProvider instanceof MockProvider && deps.config.NODE_ENV !== "production") {
+  if (deps.paymentProvider instanceof MockProvider && deps.config.devShortcuts) {
     const mock = deps.paymentProvider;
     app.post("/v1/payments/mock/:providerOrderId/succeed", async (req) => {
       const { providerOrderId } = req.params as { providerOrderId: string };

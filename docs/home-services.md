@@ -10,9 +10,30 @@ Nothing extra to set up. Run `pnpm dev` as in the README. On first start the API
 |---|---|---|
 | Customer | any number, e.g. 98765 43210 | Home tile "Home services" → add to cart → checkout |
 | Professional | 90000 00001 to 90000 00008 (see `seed-data.ts` for who does what) | http://localhost:3000/pro |
-| Admin | 99999 00000 (local default; set `ADMIN_PHONES` for real numbers) | http://localhost:3000/admin |
+| Admin | 99999 00000 (local default, no authenticator code needed locally) | http://localhost:3000/admin |
 
 Payments use the mock provider locally: "Pay now" succeeds instantly. To reload the catalogue after editing prices in `seed-data.ts`, run `pnpm db:seed` (add `-- --demo` for demo pros). To start over, stop the API and delete `apps/api/.data`.
+
+## Who can do what (access rules)
+
+All checks happen on the API for every request; hiding a button in the app is never the protection.
+
+- **Customer**: anyone signed in. Booking needs a verified mobile number.
+- **Professional**: anyone can apply at `/pro`, but sees no jobs and can't act until an admin approves them. Every partner API re-checks "approved, right city, right category, my job".
+- **Admin**: three checks on every admin API call:
+  1. signed in with a live session,
+  2. the account's mobile number is verified by OTP and listed in `ADMIN_PHONES`,
+  3. this session was unlocked with a 6-digit code from an authenticator app (Google/Microsoft Authenticator) in the last 8 hours. 5 wrong codes lock it for 15 minutes; a code can't be reused; logging out ends the unlock.
+
+**Developer shortcuts** (demo admin 99999 00000, demo partners, demo Google button, instant mock payments) exist only on a developer's own machine: when sign-in codes are printed to the terminal instead of sent. As soon as real SMS or email is configured, or `NODE_ENV=production`, they all switch off, and the API refuses to start without a real `JWT_SECRET`, Razorpay, and an authenticator secret for every admin.
+
+### Set up an admin for a real deployment
+
+```
+pnpm admin:2fa 9876543210
+```
+
+Scan or type the key into Google Authenticator on that admin's phone, then put the two printed lines (`ADMIN_PHONES`, `ADMIN_TOTP_SECRETS`) in the server's settings.
 
 ## How it works
 

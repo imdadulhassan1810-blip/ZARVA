@@ -91,6 +91,10 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
     mockPaymentSuccess: (providerOrderId: string) =>
       raw<{ confirmation: PaymentConfirmation }>("POST", `/v1/payments/mock/${encodeURIComponent(providerOrderId)}/succeed`, undefined, false),
 
+    /** Is this account an admin, and does this session still need the authenticator code? */
+    adminStatus: () => call<{ admin: boolean; needsCode: boolean; unlocked: boolean }>("GET", "/v1/admin/status"),
+    adminUnlock: (code: string) => call<{ unlocked: true; until: string }>("POST", "/v1/admin/unlock", { code }),
+
     home: {
       cities: () => raw<{ cities: HomeCity[] }>("GET", `${H}/cities`, undefined, false),
       catalog: (city: string) =>

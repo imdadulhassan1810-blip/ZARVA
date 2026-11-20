@@ -8,6 +8,7 @@
     "start": "tsx --env-file-if-exists=../../.env src/server.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=../../.env src/db/migrate.ts",
+    "admin:2fa": "tsx src/admin/setup-2fa.ts",
     "db:seed": "tsx --env-file-if-exists=../../.env src/modules/home/seed.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

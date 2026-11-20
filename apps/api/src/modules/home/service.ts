@@ -108,6 +108,10 @@ export class HomeServicesService {
     });
     if (existing) return { booking: await this.load(existing.id, "customer"), payment: await this.currentPayment(existing) };
 
+    // The pro has to be able to call the customer, including for pay-after-service bookings.
+    const customer = await this.db.query.users.findFirst({ where: eq(users.id, userId), columns: { phone: true } });
+    if (!customer?.phone) throw new AppError(403, "phone_required", "Add and verify your mobile number before booking");
+
     const city = await this.activeCity(input.cityId);
     const addr = await this.db.query.addresses.findFirst({
       where: and(eq(addresses.id, input.addressId), eq(addresses.userId, userId), isNull(addresses.deletedAt)),
@@ -479,7 +483,7 @@ export class HomeServicesService {
       paid: b.paid,
       refundedPaise: b.refundedPaise,
       ...(view === "customer" || view === "admin" ? { startCode: b.startCode } : {}),
-      pro: pro ? { name: pro.name, ...(proUser ? { phone: proUser.phone } : {}) } : null,
+      pro: pro ? { name: pro.name, ...(proUser?.phone ? { phone: proUser.phone } : {}) } : null,
       customerNote: b.customerNote,
       canCancel: view === "customer" ? this.canCustomerCancel(b) : false,
       events: view === "preview" ? [] : events.map((e) => ({ status: e.status, note: e.note, at: e.createdAt.toISOString() })),

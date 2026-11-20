@@ -8,6 +8,15 @@ const envSchema = z.object({
   OTP_PROVIDER: z.enum(["console", "msg91", "memory"]).default("console"),
   MSG91_AUTH_KEY: z.string().optional(),
   MSG91_TEMPLATE_ID: z.string().optional(),
+  /** "console" prints email codes to the API terminal (dev). "resend" sends real email. */
+  EMAIL_PROVIDER: z.enum(["console", "resend", "memory"]).default("console"),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
+  /**
+   * Google OAuth "Web application" client id(s), comma-separated. When empty, development uses a
+   * demo Google button (no keys needed) and production hides Google sign-in.
+   */
+  GOOGLE_CLIENT_ID: z.string().default(""),
   PAYMENT_PROVIDER: z.enum(["mock", "razorpay"]).default("mock"),
   /** Home services is the launch vertical, so it is on unless you override this. */
   ENABLED_MODULES: z.string().default("home"),
@@ -24,6 +33,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (cfg.NODE_ENV === "production") {
     if (cfg.OTP_PROVIDER !== "msg91") throw new Error("Production must use a real OTP provider");
     if (cfg.JWT_SECRET.startsWith("local-dev-only")) throw new Error("Set a real JWT_SECRET in production");
+    if (cfg.EMAIL_PROVIDER !== "resend") throw new Error("Production must send real email (EMAIL_PROVIDER=resend)");
     if (cfg.DATABASE_URL.startsWith("pglite")) throw new Error("Production must use PostgreSQL, not the demo database");
   }
   // Local convenience: sign in as 99999 00000 to open /admin. Production must list real numbers.

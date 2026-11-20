@@ -24,7 +24,7 @@ export function homeRoutes(app: FastifyInstance, prefix: string, svc: HomeServic
   async function requireAdmin(req: FastifyRequest) {
     await app.requireAuth(req, undefined as never);
     const u = await app.db.query.users.findFirst({ where: eq(users.id, req.userId!) });
-    if (!u || !admins.has(u.phone)) throw forbidden("Admins only");
+    if (!u?.phone || !admins.has(u.phone)) throw forbidden("Admins only");
   }
 
   // ----- Public catalogue -----

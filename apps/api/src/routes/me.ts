@@ -1,6 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
-import { addressInputSchema, addressUpdateSchema, profileUpdateSchema, type Address } from "@zarva/core";
+import {
+  addressInputSchema, addressUpdateSchema, linkEmailRequestSchema, linkEmailVerifySchema, linkPhoneRequestSchema, linkPhoneVerifySchema,
+  profileUpdateSchema, type Address,
+} from "@zarva/core";
 import { z } from "zod";
 import { toPublicUser } from "../auth/service";
 import { addresses, users } from "../db/schema";
@@ -28,6 +31,30 @@ export async function meRoutes(app: FastifyInstance) {
     const patch = parse(profileUpdateSchema, req.body);
     const [u] = await app.db.update(users).set({ ...patch, updatedAt: new Date() }).where(eq(users.id, req.userId!)).returning();
     return { user: toPublicUser(u!) };
+  });
+
+  // Add a mobile number or email to the account (e.g. after signing up with Google).
+  app.post("/v1/me/phone/request", async (req) => {
+    const { phone } = parse(linkPhoneRequestSchema, req.body);
+    const target = { kind: "phone" as const, value: phone };
+    await app.services.auth.assertLinkable(req.userId!, target);
+    const r = await app.services.auth.requestCode(target, req.ip);
+    return { sent: true, retryAfter: r.retryAfter };
+  });
+  app.post("/v1/me/phone/verify", async (req) => {
+    const { phone, code } = parse(linkPhoneVerifySchema, req.body);
+    return { user: await app.services.auth.linkWithCode(req.userId!, { kind: "phone", value: phone }, code) };
+  });
+  app.post("/v1/me/email/request", async (req) => {
+    const { email } = parse(linkEmailRequestSchema, req.body);
+    const target = { kind: "email" as const, value: email };
+    await app.services.auth.assertLinkable(req.userId!, target);
+    const r = await app.services.auth.requestCode(target, req.ip);
+    return { sent: true, retryAfter: r.retryAfter };
+  });
+  app.post("/v1/me/email/verify", async (req) => {
+    const { email, code } = parse(linkEmailVerifySchema, req.body);
+    return { user: await app.services.auth.linkWithCode(req.userId!, { kind: "email", value: email }, code) };
   });
 
   app.get("/v1/me/addresses", async (req) => {

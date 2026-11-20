@@ -1,8 +1,11 @@
 export interface PublicUser {
   id: string;
-  phone: string;
+  /** Verified mobile number, or null until the person adds one. Required before booking. */
+  phone: string | null;
   name: string | null;
+  /** Verified email, or null. */
   email: string | null;
+  hasGoogle: boolean;
   preferredLanguage: "en" | "hi" | "bn";
   createdAt: string;
 }
@@ -33,3 +36,12 @@ export interface Address {
 export interface ApiError {
   error: { code: string; message: string; details?: unknown };
 }
+
+export interface AuthProviders {
+  phone: true;
+  email: true;
+  /** live: real Google button. mock: demo button that needs no Google keys (development only). off: hidden. */
+  google: { mode: "live" | "mock" | "off"; clientId: string | null };
+}
+
+export type LoginResult = AuthTokens & { user: PublicUser; isNewUser: boolean };

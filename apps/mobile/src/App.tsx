@@ -3,7 +3,8 @@ import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { logoRules, verticalIds, verticals } from "@zarva/brand";
-import { formatPhone, phoneSchema, type ModuleStatus, type PublicUser } from "@zarva/core";
+import { formatPhone, type ModuleStatus, type PublicUser } from "@zarva/core";
+import { CodeForm } from "./CodeForm";
 import { api, loadTokens } from "./api";
 import { useTheme, type Theme } from "./theme";
 import { Button, Field, Loading } from "./ui";
@@ -37,41 +38,24 @@ function Logo({ t }: { t: Theme }) {
 }
 
 function Login({ t, onDone }: { t: Theme; onDone: () => void }) {
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  const [sent, setSent] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function run(fn: () => Promise<void>) {
-    setBusy(true);
-    setError(null);
-    try { await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
-  }
-
+  const [method, setMethod] = useState<"phone" | "email">("phone");
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }} keyboardShouldPersistTaps="handled">
       <Logo t={t} />
-      <Text style={{ color: t.text, fontSize: t.fontSize["2xl"], fontWeight: "600", marginTop: 24 }}>Sign in</Text>
-      <Text style={{ color: t.muted }}>We'll send a 6-digit code to your mobile number.</Text>
-      {!sent ? (
-        <>
-          <Field t={t} label="Mobile number" keyboardType="phone-pad" autoComplete="tel" placeholder="98765 43210" value={phone} onChangeText={setPhone} />
-          <Button t={t} title={busy ? "Sending…" : "Send OTP"} disabled={busy} onPress={() => run(async () => {
-            const p = phoneSchema.safeParse(phone);
-            if (!p.success) throw new Error(p.error.issues[0]?.message);
-            await api.requestOtp(p.data);
-            setSent(true);
-          })} />
-        </>
+      <Text style={{ color: t.text, fontSize: t.fontSize["2xl"], fontWeight: "600", marginTop: 24 }}>Sign in or sign up</Text>
+      <Text style={{ color: t.muted }}>No password needed. We send a one-time code.</Text>
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        {(["phone", "email"] as const).map((m) => (
+          <View key={m} style={{ flex: 1 }}>
+            <Button t={t} ghost={method !== m} title={m === "phone" ? "Mobile" : "Email"} onPress={() => setMethod(m)} />
+          </View>
+        ))}
+      </View>
+      {method === "phone" ? (
+        <CodeForm key="phone" t={t} kind="phone" onSend={(p) => api.requestOtp(p)} onVerify={async (p, c) => { await api.verifyOtp(p, c); onDone(); }} />
       ) : (
-        <>
-          <Field t={t} label={`Code sent to ${phone}`} keyboardType="number-pad" autoComplete="sms-otp" textContentType="oneTimeCode" maxLength={6} value={code} onChangeText={(s) => setCode(s.replace(/\D/g, ""))} />
-          <Button t={t} title={busy ? "Checking…" : "Verify"} disabled={busy || code.length !== 6} onPress={() => run(async () => { await api.verifyOtp(phone, code); onDone(); })} />
-          <Button t={t} ghost title="Change number" onPress={() => { setSent(false); setCode(""); }} />
-        </>
+        <CodeForm key="email" t={t} kind="email" onSend={(e) => api.requestEmailCode(e)} onVerify={async (e, c) => { await api.verifyEmailCode(e, c); onDone(); }} />
       )}
-      {error && <Text style={{ color: t.danger }}>{error}</Text>}
     </ScrollView>
   );
 }
@@ -91,7 +75,14 @@ function Home({ t, onSignOut, onOpen }: { t: Theme; onSignOut: () => void; onOpe
       <Text style={{ color: t.text, fontSize: t.fontSize.xl, fontWeight: "600", marginTop: 16 }}>
         {user?.name ? `Hi ${user.name}` : "Welcome"}
       </Text>
-      <Text style={{ color: t.muted }}>{user ? formatPhone(user.phone) : ""} · {logoRules.tagline}</Text>
+      <Text style={{ color: t.muted }}>{user ? formatPhone(user.phone) || user.email : ""} · {logoRules.tagline}</Text>
+      {user && !user.phone && (
+        <View style={{ borderWidth: 1, borderColor: t.border, borderRadius: t.radius.md, padding: 14, gap: 10, backgroundColor: t.surface }}>
+          <Text style={{ color: t.text, fontWeight: "600" }}>Add your mobile number to book services</Text>
+          <Text style={{ color: t.muted }}>Professionals call you before they arrive.</Text>
+          <CodeForm t={t} kind="phone" submitLabel="Add number" onSend={(p) => api.requestPhoneLink(p)} onVerify={async (p, c) => setUser((await api.verifyPhoneLink(p, c)).user)} />
+        </View>
+      )}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
         {verticalIds.map((id) => {
           const m = byId.get(id);

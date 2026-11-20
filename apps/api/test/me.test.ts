@@ -8,14 +8,14 @@ afterEach(async () => { await t.close(); });
 const addr = { name: "Imran", phone: "9876543210", line1: "12 GT Road, Burnpur", city: "Asansol", state: "West Bengal", pincode: "713325" };
 
 describe("profile", () => {
-  it("updates name, email and language", async () => {
+  it("updates name and language", async () => {
     const s = await t.login();
-    const r = await t.app.inject({ method: "PATCH", url: "/v1/me", headers: s.headers, payload: { name: "Imran", email: "i@example.com", preferredLanguage: "bn" } });
-    expect(r.json().user).toMatchObject({ name: "Imran", email: "i@example.com", preferredLanguage: "bn" });
+    const r = await t.app.inject({ method: "PATCH", url: "/v1/me", headers: s.headers, payload: { name: "Imran", preferredLanguage: "bn" } });
+    expect(r.json().user).toMatchObject({ name: "Imran", preferredLanguage: "bn" });
   });
-  it("rejects a bad email", async () => {
+  it("rejects an empty name", async () => {
     const s = await t.login();
-    const r = await t.app.inject({ method: "PATCH", url: "/v1/me", headers: s.headers, payload: { email: "nope" } });
+    const r = await t.app.inject({ method: "PATCH", url: "/v1/me", headers: s.headers, payload: { name: "  " } });
     expect(r.statusCode).toBe(400);
   });
 });

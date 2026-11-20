@@ -13,7 +13,7 @@ This repository is the **vertical-agnostic foundation** (sign-in, profiles, addr
 | API | Fastify 5 + Drizzle ORM + PostgreSQL 16 | Fast, typed SQL, plain migrations; Postgres covers everything up to serious scale |
 | Web | Next.js 15.5 (App Router) + PWA manifest | SEO for landing pages, installable on Android |
 | Mobile | Expo SDK 58 (React Native 0.88) | One codebase for Android and iOS; OTA updates |
-| Auth | Phone OTP, JWT access token (15 min) + rotating refresh token (60 days) | Phone is the identity in India |
+| Auth | Phone OTP, email code, Google; JWT access token (15 min) + rotating refresh token (60 days) | No passwords to leak or reset; verified phone required before booking |
 | SMS | MSG91 adapter (console sender in dev) | Needs DLT registration before go-live |
 | Payments | Provider interface; Razorpay adapter (UPI first) + mock | Swap provider without touching verticals |
 
@@ -57,6 +57,10 @@ Wait for `ZARVA API ready` and `Ready`, then open **http://localhost:3000**.
 To sign in, enter any 10-digit Indian mobile number (for example `98765 43210`) and press **Send OTP**. No SMS is sent: the 6-digit code appears in the terminal as
 `>>> OTP for +919876543210: 123456 <<<`. Type that code into the website.
 
+You can also sign in with **email** (the code is printed the same way, as `>>> Email code for … <<<`) or **Continue with Google**. Until you add real Google keys, the Google button is a demo: type any Gmail address and a name.
+
+Google and email accounts must add a mobile number (Account page) before booking, because professionals call customers.
+
 Stop with `Ctrl + C`. Your demo data stays until you delete `apps/api/.data`.
 
 ### See the mobile app on your phone
@@ -76,6 +80,26 @@ The phone finds the API on your computer automatically. If it can't (some office
 
 Copy `.env.example` to `.env`, set `DATABASE_URL=postgres://zarva:zarva@localhost:5432/zarva_dev`, and start Postgres (`docker compose up -d`). Migrations run automatically when the API starts. The API tests need a `zarva_test` Postgres database (`createdb -O zarva zarva_test`); then run `pnpm test`.
 
+## Google sign-in (real, when you're ready)
+
+Free, about 10 minutes, and needs a Google account:
+
+1. Go to https://console.cloud.google.com and create a project named **ZARVA**.
+2. Open **APIs & Services → OAuth consent screen**. Choose **External**, fill in the app name (ZARVA), a support email and the logo, and save. While it's in "Testing" mode, add your own Gmail under **Test users**.
+3. Open **APIs & Services → Credentials → Create credentials → OAuth client ID**.
+   - Application type: **Web application**
+   - Authorised JavaScript origins: `http://localhost:3000` (add your real domain later, e.g. `https://zarva.in`)
+   - Redirect URIs: leave empty (the button doesn't need one)
+4. Copy the **Client ID** (it ends in `.apps.googleusercontent.com`). The client secret is not needed.
+5. Put it in `.env` (copy `.env.example` to `.env` first if you don't have one):
+   ```
+   GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
+   ```
+   and restart `pnpm dev`. The demo button becomes the real Google button.
+6. Before launch, click **Publish app** on the consent screen so anyone can sign in.
+
+Google sign-in on the **mobile app** needs a custom Expo development build (it doesn't work inside Expo Go). Mobile users can sign in with phone or email meanwhile.
+
 ## API (v1)
 
 | Method | Path | Auth | What |
@@ -84,6 +108,12 @@ Copy `.env.example` to `.env`, set `DATABASE_URL=postgres://zarva:zarva@localhos
 | POST | /v1/auth/otp/verify | - | Verify OTP, create user if new, return tokens |
 | POST | /v1/auth/refresh | - | Rotate refresh token. Reusing an old one revokes all sessions |
 | POST | /v1/auth/logout | - | Revoke this device's session |
+| GET | /v1/auth/providers | - | Which sign-in methods are on (Google live / demo / off) |
+| POST | /v1/auth/email/request | - | Email a 6-digit code |
+| POST | /v1/auth/email/verify | - | Verify email code, create user if new |
+| POST | /v1/auth/google | - | Sign in with a Google ID token (links to an existing account with the same verified email) |
+| POST | /v1/me/phone/request, /verify | yes | Add a verified mobile to the account (required before booking) |
+| POST | /v1/me/email/request, /verify | yes | Add a verified email to the account |
 | GET/PATCH | /v1/me | yes | Profile (name, email, language: en/hi/bn) |
 | GET/POST | /v1/me/addresses | yes | List / add (max 20, one default) |
 | PATCH/DELETE | /v1/me/addresses/:id | yes | Edit / soft delete |

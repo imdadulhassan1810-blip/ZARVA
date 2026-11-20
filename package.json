@@ -1,23 +1,20 @@
 {
-  "name": "daily-chores-system",
+  "name": "zarva",
   "private": true,
   "version": "0.1.0",
-  "description": "OneApp - a multi-service aggregator platform (cab, hotel, flights, trains, buses, grocery, stationary, electronics, clothing, gas, bill payments) with Web, iOS and Android clients.",
-  "workspaces": [
-    "packages/*",
-    "apps/*"
-  ],
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22" },
   "scripts": {
-    "dev:backend": "npm run dev --workspace=apps/backend",
-    "dev:web": "npm run dev --workspace=apps/web",
-    "dev:mobile": "npm run start --workspace=apps/mobile",
-    "build:shared": "npm run build --workspace=packages/shared",
-    "build:backend": "npm run build --workspace=apps/backend",
-    "build:web": "npm run build --workspace=apps/web",
-    "typecheck": "npm run typecheck --workspace=packages/shared && npm run typecheck --workspace=apps/backend && npm run typecheck --workspace=apps/web && npm run typecheck --workspace=apps/mobile",
-    "seed": "npm run seed --workspace=apps/backend"
+    "dev:api": "pnpm --filter @zarva/api dev",
+    "dev:web": "pnpm --filter @zarva/web dev",
+    "dev:mobile": "pnpm --filter @zarva/mobile start",
+    "db:migrate": "pnpm --filter @zarva/api db:migrate",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build"
   },
-  "engines": {
-    "node": ">=18"
+  "devDependencies": {
+    "typescript": "5.7.3",
+    "@types/node": "22.10.7"
   }
 }

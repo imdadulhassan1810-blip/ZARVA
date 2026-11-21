@@ -50,7 +50,9 @@ export const proNextStatus: Partial<Record<HomeBookingStatus, HomeBookingStatus>
 };
 
 export type HomePayMode = "online" | "after_service";
-export type HomeProStatus = "pending" | "active" | "suspended";
+/** draft: filling in the sign-up. pending: submitted, waiting for admin. rejected: admin asked for fixes. */
+export type HomeProStatus = "draft" | "pending" | "active" | "rejected" | "suspended";
+export const homeProStatuses: HomeProStatus[] = ["draft", "pending", "active", "rejected", "suspended"];
 
 export interface HomeCity { id: string; name: string; state: string; active: boolean }
 export interface HomeCategory { id: string; slug: string; name: string; icon: string; description: string; serviceCount: number }
@@ -90,9 +92,88 @@ export interface HomeBooking {
   events: HomeBookingEvent[];
   createdAt: string;
 }
+/** KYC documents a professional uploads. id_front and selfie are required; the rest are optional. */
+export const homeProDocKinds = ["id_front", "id_back", "selfie", "certificate"] as const;
+export type HomeProDocKind = (typeof homeProDocKinds)[number];
+export const homeProRequiredDocs: HomeProDocKind[] = ["id_front", "selfie"];
+export const homeProDocLabel: Record<HomeProDocKind, string> = {
+  id_front: "ID proof (front)",
+  id_back: "ID proof (back)",
+  selfie: "Your photo (selfie)",
+  certificate: "Skill certificate (optional)",
+};
+export const homeProIdTypes = ["aadhaar_masked", "pan", "voter_id", "driving_licence"] as const;
+export type HomeProIdType = (typeof homeProIdTypes)[number];
+export const homeProIdTypeLabel: Record<HomeProIdType, string> = {
+  aadhaar_masked: "Masked Aadhaar (from UIDAI site)",
+  pan: "PAN card",
+  voter_id: "Voter ID",
+  driving_licence: "Driving licence",
+};
+export const HOME_DOC_RULES = { maxBytes: 5 * 1024 * 1024, mimes: ["image/jpeg", "image/png", "application/pdf"] } as const;
+
+export interface HomeProDocument { kind: HomeProDocKind; mime: string; sizeBytes: number; uploadedAt: string }
+/** Payout details as shown back: account numbers are masked. */
+export interface HomeProPayoutInfo { upi: string | null; bankAccountMasked: string | null; ifsc: string | null; accountName: string | null }
+
 export interface HomePro {
   id: string; userId: string; name: string; phone: string; cityId: string; categoryIds: string[];
   status: HomeProStatus; locality: string | null; jobsDone: number;
+  experienceYears: number | null;
+  idType: HomeProIdType | null;
+  rejectionReason: string | null;
+  submittedAt: string | null;
+  documents: HomeProDocument[];
+  payout: HomeProPayoutInfo;
+  /** What is still missing before the pro can submit for review. Empty = ready. */
+  missing: string[];
+}
+
+// ---------- Earnings and payouts ----------
+
+/**
+ * Pro ledger. Positive = ZARVA owes the pro, negative = the pro owes ZARVA. Balance = sum.
+ *  job_earning      +(job price - commission), on completion
+ *  cash_collected   -(total), when the pro collected cash for a pay-after-service job
+ *  payout           -(amount), when ZARVA sends money to the pro
+ *  payout_reversal  +(amount), when a payout failed and the money is back with ZARVA
+ *  adjustment       +/- by an admin, with a note (bonus, penalty, cash dues received)
+ */
+export const homeLedgerKinds = ["job_earning", "cash_collected", "payout", "payout_reversal", "adjustment"] as const;
+export type HomeLedgerKind = (typeof homeLedgerKinds)[number];
+export const homeLedgerLabel: Record<HomeLedgerKind, string> = {
+  job_earning: "Job earning",
+  cash_collected: "Cash you collected",
+  payout: "Paid to you",
+  payout_reversal: "Payout failed, returned",
+  adjustment: "Adjustment",
+};
+export interface HomeLedgerEntry {
+  id: string; kind: HomeLedgerKind; amountPaise: number; bookingCode: string | null; payoutId: string | null;
+  grossPaise: number | null; commissionPaise: number | null; note: string | null; at: string;
+}
+export type HomePayoutStatus = "processing" | "manual" | "paid" | "failed";
+export interface HomePayout {
+  id: string; proId: string; proName: string; amountPaise: number; status: HomePayoutStatus; provider: string;
+  destination: string; utr: string | null; failureReason: string | null; note: string | null; createdAt: string; paidAt: string | null;
+}
+export interface HomeEarnings {
+  balancePaise: number;
+  /** Earned (after commission) in the last 7 days. */
+  weekPaise: number;
+  jobsThisWeek: number;
+  entries: HomeLedgerEntry[];
+  payouts: HomePayout[];
+}
+export interface HomeProBalance {
+  proId: string; name: string; phone: string; status: HomeProStatus; balancePaise: number;
+  payoutReady: boolean; destination: string | null; lastPayoutAt: string | null;
+}
+export interface HomeAdminCategory { id: string; slug: string; name: string; icon: string; commissionBps: number }
+
+/** Commission on the job price (before the convenience fee, which is ZARVA's). bps: 2000 = 20%. */
+export function homeCommission(subtotalPaise: number, commissionBps: number): number {
+  return Math.round((subtotalPaise * commissionBps) / 10_000);
 }
 
 export const homeCartItemSchema = z.object({
@@ -117,8 +198,31 @@ export const homeProApplySchema = z.object({
   cityId: z.string().min(2).max(40),
   categoryIds: z.array(z.string().uuid()).min(1).max(8),
   locality: z.string().trim().max(80).optional(),
+  experienceYears: z.number().int().min(0).max(50).optional(),
+  idType: z.enum(homeProIdTypes).optional(),
 });
 export type HomeProApply = z.infer<typeof homeProApplySchema>;
+export const homeProUpdateSchema = homeProApplySchema.omit({ cityId: true }).partial();
+export type HomeProUpdate = z.infer<typeof homeProUpdateSchema>;
+
+export const upiSchema = z.string().trim().toLowerCase().regex(/^[a-z0-9.\-_]{2,256}@[a-z][a-z0-9]{1,63}$/, "Enter a valid UPI ID, e.g. name@okaxis");
+export const ifscSchema = z.string().trim().toUpperCase().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, "IFSC is 11 characters, e.g. SBIN0001234");
+export const homeProPayoutSchema = z
+  .object({
+    accountName: z.string().trim().min(2).max(80),
+    upi: upiSchema.optional(),
+    bankAccount: z.string().trim().regex(/^\d{9,18}$/, "Account number is 9 to 18 digits").optional(),
+    ifsc: ifscSchema.optional(),
+  })
+  .refine((p) => p.upi || p.bankAccount, "Add a UPI ID or a bank account")
+  .refine((p) => !p.bankAccount === !p.ifsc, "Bank account needs its IFSC code");
+export type HomeProPayoutInput = z.infer<typeof homeProPayoutSchema>;
+
+export const homeDocUploadSchema = z.object({
+  mime: z.enum(HOME_DOC_RULES.mimes),
+  /** File bytes, base64. The web app shrinks photos to about 1600 px first. */
+  dataBase64: z.string().min(16).max(Math.ceil((HOME_DOC_RULES.maxBytes * 4) / 3) + 8),
+});
 
 export function homeTotals(lines: { unitPricePaise: number; qty: number }[]) {
   const subtotalPaise = lines.reduce((s, l) => s + l.unitPricePaise * l.qty, 0);

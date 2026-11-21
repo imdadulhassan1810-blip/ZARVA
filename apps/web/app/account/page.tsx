@@ -14,6 +14,7 @@ export default function Account() {
   const [name, setName] = useState("");
   const [adding2, setAdding2] = useState<"phone" | "email" | null>(null);
   const [lang, setLang] = useState<PublicUser["preferredLanguage"]>("en");
+  const [whatsapp, setWhatsapp] = useState(false);
   const [draft, setDraft] = useState(emptyAddress);
   const [adding, setAdding] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -27,6 +28,7 @@ export default function Account() {
       setUser(user);
       setName(user.name ?? "");
       setLang(user.preferredLanguage);
+      setWhatsapp(user.whatsappOptIn);
       setAddresses(addresses);
     } catch {
       router.replace("/login");
@@ -46,7 +48,7 @@ export default function Account() {
     e.preventDefault();
     setError(null);
     try {
-      const r = await api.updateMe({ name: name.trim() || undefined, preferredLanguage: lang });
+      const r = await api.updateMe({ name: name.trim() || undefined, preferredLanguage: lang, whatsappOptIn: whatsapp });
       setUser(r.user);
       setMsg("Profile saved");
     } catch (err) {
@@ -126,6 +128,10 @@ export default function Account() {
             <option value="hi">हिन्दी</option>
             <option value="bn">বাংলা</option>
           </select>
+        </label>
+        <label className="choice">
+          <input type="checkbox" checked={whatsapp} onChange={(e) => setWhatsapp(e.target.checked)} />
+          <span>Send booking updates on WhatsApp too <span className="muted">(we always send SMS)</span></span>
         </label>
         {msg && <p className="muted" role="status">{msg}</p>}
         <button className="btn">Save profile</button>

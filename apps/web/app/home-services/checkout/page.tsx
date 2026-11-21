@@ -22,6 +22,9 @@ export default function Checkout() {
   const [slot, setSlot] = useState<string | null>(null);
   const [payMode, setPayMode] = useState<HomePayMode>("online");
   const [note, setNote] = useState("");
+  // null until we know the account's current choice. Never pre-ticked: WhatsApp needs a real opt-in.
+  const [whatsapp, setWhatsapp] = useState<boolean | null>(null);
+  const [whatsappWas, setWhatsappWas] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // One key per checkout visit: a double click or retry after a network error never books twice.
@@ -34,6 +37,8 @@ export default function Checkout() {
     // Bookings need a verified mobile: send phone-less accounts (Google/email sign-ups) to add one first.
     api.me().then((r) => {
       if (!r.user.phone) router.replace(`/account?next=${encodeURIComponent("/home-services/checkout")}`);
+      setWhatsappWas(r.user.whatsappOptIn);
+      setWhatsapp(r.user.whatsappOptIn);
     }).catch(() => undefined);
     setCart(c);
     api.home.catalog(c.cityId).then((r) => setServices(r.services)).catch((e: Error) => setError(e.message));
@@ -64,6 +69,10 @@ export default function Checkout() {
     setBusy(true);
     setError(null);
     try {
+      if (whatsapp !== null && whatsapp !== whatsappWas) {
+        await api.updateMe({ whatsappOptIn: whatsapp }).catch(() => undefined);
+        setWhatsappWas(whatsapp);
+      }
       const r = await api.home.createBooking({
         cityId: cart.cityId, addressId, slotStart: slot, payMode, note: note.trim() || undefined, idempotencyKey,
         items: Object.entries(cart.items).map(([serviceId, qty]) => ({ serviceId, qty })),
@@ -146,6 +155,12 @@ export default function Checkout() {
           <input type="radio" name="pay" checked={payMode === "after_service"} onChange={() => setPayMode("after_service")} />
           <div><strong>Pay after service</strong><div className="muted" style={{ fontWeight: 400 }}>Cash or UPI to the professional when the job is done.</div></div>
         </label>
+        {whatsapp !== null && (
+          <label className="choice" style={{ fontSize: 15 }}>
+            <input type="checkbox" checked={whatsapp} onChange={(e) => setWhatsapp(e.target.checked)} />
+            <span>Also send me booking updates on WhatsApp <span className="muted">(SMS is always sent)</span></span>
+          </label>
+        )}
         <label>
           Note for the professional (optional)
           <input value={note} maxLength={300} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Ring the bell twice, 2nd floor" />

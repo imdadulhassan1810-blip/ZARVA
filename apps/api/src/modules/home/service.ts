@@ -1,15 +1,17 @@
 import { randomInt } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
-  bookableSlotStarts, bookingCode, formatDay, formatSlot, HOME_RULES, homeStatusLabel, homeTotals, istDate, isSlotStart,
-  proNextStatus,
+  bookableSlotStarts, bookingCode, formatDay, formatPhone, formatRupees, formatSlot, HOME_RULES, homeStatusLabel, homeTotals, istDate,
+  isSlotStart, proNextStatus,
   type HomeAddressSnapshot, type HomeBooking, type HomeBookingStatus, type HomeCategory, type HomeCity, type HomeCreateBooking,
-  type HomePro, type HomeProApply, type HomeService, type HomeSlotDay,
+  type HomeService, type HomeSlotDay,
 } from "@zarva/core";
 import type { Db, Tx } from "../../db/client";
 import { addresses, payments, users } from "../../db/schema";
 import { AppError, badRequest, conflict, forbidden, notFound } from "../../lib/errors";
 import type { PaymentRow, PaymentService } from "../../payments/service";
+import type { NotificationService } from "../../notify";
+import type { EarningsService } from "./earnings";
 import {
   homeBookingEvents, homeBookingItems, homeBookings, homeCategories, homeCities, homePros, homeServices,
 } from "./schema";
@@ -25,7 +27,13 @@ const LIVE: HomeBookingStatus[] = ["confirmed", "assigned", "on_the_way", "in_pr
 const CUSTOMER_CANCELLABLE: HomeBookingStatus[] = ["pending_payment", "confirmed", "assigned"];
 
 export class HomeServicesService {
-  constructor(private db: Db, private payments: PaymentService, private now: () => Date) {
+  constructor(
+    private db: Db,
+    private payments: PaymentService,
+    private now: () => Date,
+    private notify: NotificationService,
+    private earnings: EarningsService,
+  ) {
     payments.onStatusChange("home", (p, tx) => this.onPayment(p, tx));
   }
 
@@ -164,6 +172,7 @@ export class HomeServicesService {
         .returning();
       await tx.insert(homeBookingItems).values(lines.map((l) => ({ ...l, bookingId: b!.id })));
       await this.event(tx, b!.id, b!.status, "customer", online ? "Waiting for payment" : "Pay after service");
+      if (!online) await this.tellCustomer(tx, b!, "booking_confirmed", { service: svcs[0]!.name + (lines.length > 1 ? ` +${lines.length - 1}` : "") });
       return b!;
     });
 
@@ -210,6 +219,8 @@ export class HomeServicesService {
     if ((p.status === "authorized" || p.status === "captured") && b.status === "pending_payment") {
       await tx.update(homeBookings).set({ status: "confirmed", paid: true, updatedAt: this.now() }).where(eq(homeBookings.id, b.id));
       await this.event(tx, b.id, "confirmed", "system", "Payment received");
+      const items = await tx.select({ name: homeBookingItems.name }).from(homeBookingItems).where(eq(homeBookingItems.bookingId, b.id));
+      await this.tellCustomer(tx, b, "booking_confirmed", { service: (items[0]?.name ?? "") + (items.length > 1 ? ` +${items.length - 1}` : "") });
     } else if (p.status === "failed" && b.status === "pending_payment") {
       await this.event(tx, b.id, "pending_payment", "system", "Payment failed. Try again.");
     }
@@ -260,6 +271,11 @@ export class HomeServicesService {
         .returning();
       if (!u) return false;
       await this.event(tx, b.id, "cancelled", actor, reason);
+      await this.tellCustomer(tx, b, "booking_cancelled", { reason });
+      if (b.proId) {
+        const pro = await tx.query.homePros.findFirst({ where: eq(homePros.id, b.proId), columns: { userId: true } });
+        if (pro) await this.notify.notify(tx, { event: "pro_job_cancelled", userId: pro.userId, vars: { code: bookingCode(b.id), when: shortWhen(b.slotStart) }, dedupeKey: `home:booking:${b.id}:pro-cancelled` });
+      }
       return true;
     });
     if (!done) throw conflict("status_changed", "Booking changed meanwhile. Refresh and try again.");
@@ -272,6 +288,7 @@ export class HomeServicesService {
         await this.payments.refund(p.id, amount);
         await this.db.update(homeBookings).set({ refundedPaise: amount }).where(eq(homeBookings.id, b.id));
         await this.event(this.db, b.id, "cancelled", "system", `Refund of ₹${amount / 100} started. Reaches you in 5-7 days.`);
+        await this.tellCustomer(this.db, b, "refund_started", { amount: formatRupees(amount) });
       } else {
         await this.event(this.db, b.id, "cancelled", "system", "Refund will be issued once the payment settles.");
       }
@@ -282,23 +299,6 @@ export class HomeServicesService {
 
   async proFor(userId: string): Promise<ProRow | undefined> {
     return this.db.query.homePros.findFirst({ where: eq(homePros.userId, userId) });
-  }
-
-  async proMe(userId: string): Promise<HomePro | null> {
-    const p = await this.proFor(userId);
-    return p ? this.toPro(p) : null;
-  }
-
-  async applyPro(userId: string, input: HomeProApply): Promise<HomePro> {
-    if (await this.proFor(userId)) throw conflict("already_applied", "You have already applied");
-    await this.activeCity(input.cityId);
-    const cats = await this.db.select({ id: homeCategories.id }).from(homeCategories).where(inArray(homeCategories.id, input.categoryIds));
-    if (cats.length !== new Set(input.categoryIds).size) throw badRequest("invalid_category", "Unknown service category");
-    const [p] = await this.db
-      .insert(homePros)
-      .values({ userId, name: input.name, cityId: input.cityId, categoryIds: [...new Set(input.categoryIds)], locality: input.locality || null })
-      .returning();
-    return this.toPro(p!);
   }
 
   private async activePro(userId: string): Promise<ProRow> {
@@ -354,6 +354,15 @@ export class HomeServicesService {
           .returning();
         if (!u) throw conflict("job_taken", "Another professional already took this job");
         await this.event(tx, b.id, "assigned", actor, `${pro.name} will do this job`);
+        // Keyed by pro: a reassignment to someone else is news, a repeated click is not.
+        await this.tellCustomer(tx, b, "pro_assigned", { pro: pro.name, startCode: b.startCode }, `assigned:${pro.id}`);
+        if (actor !== "pro") {
+          await this.notify.notify(tx, {
+            event: "pro_job_assigned", userId: pro.userId,
+            vars: { code: bookingCode(b.id), when: shortWhen(b.slotStart), area: (b.address as HomeAddressSnapshot).line2 ?? (b.address as HomeAddressSnapshot).pincode },
+            dedupeKey: `home:booking:${b.id}:pro-assigned:${pro.id}`,
+          });
+        }
       });
     } catch (e) {
       if ((e as { code?: string }).code === "23505") throw conflict("slot_clash", `${pro.name} already has a job at this time`);
@@ -376,6 +385,14 @@ export class HomeServicesService {
         .returning();
       if (!u) throw conflict("status_changed", "Job changed meanwhile. Refresh.");
       await this.event(tx, b.id, to, "pro", cashCollected ? `Payment of ₹${b.totalPaise / 100} collected by professional` : null);
+      if (to === "on_the_way") {
+        const proUser = await tx.query.users.findFirst({ where: eq(users.id, pro.userId), columns: { phone: true } });
+        await this.tellCustomer(tx, b, "pro_on_the_way", { pro: pro.name, phone: formatPhone(proUser?.phone ?? "") });
+      }
+      if (to === "completed") {
+        await this.earnings.recordJob(tx, u, pro);
+        await this.tellCustomer(tx, b, "job_completed", { amount: formatRupees(b.totalPaise) });
+      }
     });
     return this.load(bookingId, "pro");
   }
@@ -390,17 +407,6 @@ export class HomeServicesService {
       .orderBy(desc(homeBookings.slotStart))
       .limit(100);
     return Promise.all(rows.map((r) => this.load(r.id, "admin")));
-  }
-
-  async adminPros(): Promise<HomePro[]> {
-    const rows = await this.db.select().from(homePros).orderBy(asc(homePros.status), asc(homePros.name));
-    return Promise.all(rows.map((p) => this.toPro(p)));
-  }
-
-  async adminSetProStatus(proId: string, status: ProRow["status"]): Promise<HomePro> {
-    const [p] = await this.db.update(homePros).set({ status, updatedAt: this.now() }).where(eq(homePros.id, proId)).returning();
-    if (!p) throw notFound("Professional");
-    return this.toPro(p);
   }
 
   async adminAssign(bookingId: string, proId: string): Promise<HomeBooking> {
@@ -438,16 +444,25 @@ export class HomeServicesService {
     await db.insert(homeBookingEvents).values({ bookingId, status, actor, note, createdAt: this.now() });
   }
 
-  private async toPro(p: ProRow): Promise<HomePro> {
-    const u = await this.db.query.users.findFirst({ where: eq(users.id, p.userId) });
-    const [done] = await this.db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(homeBookings)
-      .where(and(eq(homeBookings.proId, p.id), eq(homeBookings.status, "completed")));
-    return {
-      id: p.id, userId: p.userId, name: p.name, phone: u?.phone ?? "", cityId: p.cityId, categoryIds: p.categoryIds,
-      status: p.status, locality: p.locality, jobsDone: done?.n ?? 0,
-    };
+  /** SMS / WhatsApp to the customer who made the booking. `vars.code` and `vars.when` are filled in here. */
+  private async tellCustomer<E extends "booking_confirmed" | "pro_assigned" | "pro_on_the_way" | "job_completed" | "booking_cancelled" | "refund_started">(
+    db: Db | Tx, b: BookingRow, event: E, vars: Record<string, string>, key: string = event,
+  ): Promise<void> {
+    await this.notify.notify(db, {
+      event, userId: b.userId, dedupeKey: `home:booking:${b.id}:${key}`,
+      vars: { code: bookingCode(b.id), when: shortWhen(b.slotStart), ...vars } as never,
+    });
+  }
+
+  async adminCategories() {
+    const rows = await this.db.select().from(homeCategories).orderBy(asc(homeCategories.sort));
+    return rows.map((c) => ({ id: c.id, slug: c.slug, name: c.name, icon: c.icon, commissionBps: c.commissionBps }));
+  }
+
+  async adminSetCommission(id: string, commissionBps: number) {
+    const [c] = await this.db.update(homeCategories).set({ commissionBps }).where(eq(homeCategories.id, id)).returning();
+    if (!c) throw notFound("Category");
+    return { id: c.id, slug: c.slug, name: c.name, icon: c.icon, commissionBps: c.commissionBps };
   }
 
   private async load(id: string, view: View): Promise<HomeBooking> {
@@ -490,6 +505,12 @@ export class HomeServicesService {
       createdAt: b.createdAt.toISOString(),
     };
   }
+}
+
+/** "23 Nov, 11 AM" in India time. Fits the 30-character SMS variable limit. */
+export function shortWhen(slot: Date): string {
+  const day = slot.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
+  return `${day}, ${formatSlot(slot.toISOString()).split(" – ")[0]}`;
 }
 
 export interface PaymentOut { id: string; status: string; clientPayload: Record<string, unknown> }

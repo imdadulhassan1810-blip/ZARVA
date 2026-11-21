@@ -27,6 +27,7 @@ export function toPublicUser(u: UserRow): PublicUser {
     email: u.email,
     hasGoogle: u.googleSub !== null,
     preferredLanguage: u.preferredLanguage,
+    whatsappOptIn: u.whatsappOptIn,
     createdAt: u.createdAt.toISOString(),
   };
 }

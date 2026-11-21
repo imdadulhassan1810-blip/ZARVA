@@ -31,6 +31,8 @@ export const users = pgTable("users", {
   /** Google account id ("sub" claim). Stable even if the person changes their Gmail address. */
   googleSub: text("google_sub").unique(),
   preferredLanguage: languageEnum("preferred_language").notNull().default("en"),
+  /** Opted in to WhatsApp updates (Meta requires opt-in for business-started messages). */
+  whatsappOptIn: boolean("whatsapp_opt_in").notNull().default(false),
   status: userStatusEnum("status").notNull().default("active"),
   ...timestamps,
 });
@@ -135,6 +137,42 @@ export const paymentEvents = pgTable(
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("payment_events_dedupe_idx").on(t.provider, t.eventId)],
+);
+
+export const notifyChannelEnum = pgEnum("notify_channel", ["sms", "whatsapp"]);
+export const notifyStatusEnum = pgEnum("notify_status", ["queued", "sent", "failed", "skipped"]);
+
+/**
+ * Outbox for SMS / WhatsApp. Rows are written in the same transaction as the change they announce
+ * (a booking confirmed, a pro assigned...), then a background loop sends them and retries failures.
+ * So a message is never sent for a change that rolled back, and never lost when the provider is down.
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    channel: notifyChannelEnum("channel").notNull(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    /** E.164. */
+    toPhone: text("to_phone").notNull(),
+    event: text("event").notNull(),
+    vars: jsonb("vars").notNull(),
+    /** Rendered text, for the log and console sender. Providers send the registered template. */
+    body: text("body").notNull(),
+    /** Same key = same message. Stops duplicates when a webhook and the app both confirm a booking. */
+    dedupeKey: text("dedupe_key").notNull(),
+    status: notifyStatusEnum("status").notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    lastError: text("last_error"),
+    providerMessageId: text("provider_message_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("notifications_dedupe_idx").on(t.dedupeKey, t.channel),
+    index("notifications_due_idx").on(t.status, t.nextAttemptAt),
+  ],
 );
 
 // Vertical modules own their tables (prefixed <id>_) but share one schema for migrations and typed queries.

@@ -40,6 +40,13 @@ export default function Home() {
           );
         })}
       </div>
+      <Link href="/partner" className="card partner-cta">
+        <div>
+          <strong>Electrician, plumber, beautician or cleaner in Durgapur?</strong>
+          <div className="muted">Get jobs near you, at fixed prices, paid every week. Sign up as a ZARVA partner.</div>
+        </div>
+        <span className="btn btn-ghost" aria-hidden>Join →</span>
+      </Link>
     </>
   );
 }

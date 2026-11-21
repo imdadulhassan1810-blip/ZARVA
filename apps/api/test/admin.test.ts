@@ -41,6 +41,12 @@ describe("config: dev shortcuts only on a developer's machine", () => {
     expect(() => loadConfig({ NODE_ENV: "development", ...REAL, PAYMENT_PROVIDER: "mock" })).toThrow(/razorpay/);
     expect(() => loadConfig({ NODE_ENV: "development", ...REAL, JWT_SECRET: "" })).toThrow(/JWT_SECRET/);
   });
+  it("on a live server, refuses to start until the website address is allowed to call the API", () => {
+    const prod = { ...REAL, NODE_ENV: "production", DATABASE_URL: "postgres://db/zarva", PUBLIC_WEB_URL: "https://zarva.in" };
+    expect(() => loadConfig(prod)).toThrow(/CORS_ORIGINS/);
+    expect(() => loadConfig({ ...prod, CORS_ORIGINS: "http://localhost:3000" })).toThrow(/CORS_ORIGINS/);
+    expect(loadConfig({ ...prod, CORS_ORIGINS: "https://zarva.in,https://www.zarva.in" }).devShortcuts).toBe(false);
+  });
 });
 
 describe("admin app: ZARVA-issued logins", () => {

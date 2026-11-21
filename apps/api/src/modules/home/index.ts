@@ -12,7 +12,7 @@ export const homeModule: ZarvaModule<FastifyInstance> = {
   register({ app, prefix }) {
     const { notify, payouts, vault, payments } = app.services;
     const earnings = new EarningsService(app.db, payouts, notify, app.now);
-    const svc = new HomeServicesService(app.db, payments, app.now, notify, earnings);
+    const svc = new HomeServicesService(app.db, payments, app.now, notify, earnings, { onlinePayments: app.config.onlinePayments });
     const partners = new PartnerService(app.db, vault, notify, app.now);
     app.get(`${prefix}/status`, async () => ({ module: "home", ready: true }));
     homeRoutes(app, prefix, { svc, partners, earnings });

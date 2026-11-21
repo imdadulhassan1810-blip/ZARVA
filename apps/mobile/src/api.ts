@@ -35,7 +35,7 @@ export function loadTokens(mode: AppMode = "customer"): Promise<boolean> {
 
 /**
  * In development the phone loads the app from your computer (Expo's hostUri, e.g. "192.168.1.5:8081"),
- * so the API is on that same computer at port 4000. Set extra.apiUrl in app.json to override.
+ * so the API is on that same computer at port 4000. A store build gets the live address from API_URL (app.config.js).
  */
 function resolveApiUrl(): string {
   const configured = (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl;

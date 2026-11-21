@@ -21,6 +21,8 @@ export default function Checkout() {
   const [day, setDay] = useState(0);
   const [slot, setSlot] = useState<string | null>(null);
   const [payMode, setPayMode] = useState<HomePayMode>("online");
+  // The server switches online payment off while Razorpay is on test keys (no real money would move).
+  const [onlineOk, setOnlineOk] = useState(true);
   const [note, setNote] = useState("");
   // null until we know the account's current choice. Never pre-ticked: WhatsApp needs a real opt-in.
   const [whatsapp, setWhatsapp] = useState<boolean | null>(null);
@@ -41,7 +43,10 @@ export default function Checkout() {
       setWhatsapp(r.user.whatsappOptIn);
     }).catch(() => undefined);
     setCart(c);
-    api.home.catalog(c.cityId).then((r) => setServices(r.services)).catch((e: Error) => setError(e.message));
+    api.home.catalog(c.cityId).then((r) => {
+      setServices(r.services);
+      if (r.onlinePayment === false) { setOnlineOk(false); setPayMode("after_service"); }
+    }).catch((e: Error) => setError(e.message));
     api.listAddresses().then((r) => {
       setAddresses(r.addresses);
       setAddressId(r.addresses.find((a) => a.isDefault)?.id ?? r.addresses[0]?.id ?? null);
@@ -147,10 +152,12 @@ export default function Checkout() {
 
       <h2>3. Payment</h2>
       <div className="stack">
-        <label className={`card choice ${payMode === "online" ? "choice-on" : ""}`}>
-          <input type="radio" name="pay" checked={payMode === "online"} onChange={() => setPayMode("online")} />
-          <div><strong>Pay now</strong><div className="muted" style={{ fontWeight: 400 }}>UPI, cards or netbanking. Full refund if you cancel 2+ hours before.</div></div>
-        </label>
+        {onlineOk && (
+          <label className={`card choice ${payMode === "online" ? "choice-on" : ""}`}>
+            <input type="radio" name="pay" checked={payMode === "online"} onChange={() => setPayMode("online")} />
+            <div><strong>Pay now</strong><div className="muted" style={{ fontWeight: 400 }}>UPI, cards or netbanking. Full refund if you cancel 2+ hours before.</div></div>
+          </label>
+        )}
         <label className={`card choice ${payMode === "after_service" ? "choice-on" : ""}`}>
           <input type="radio" name="pay" checked={payMode === "after_service"} onChange={() => setPayMode("after_service")} />
           <div><strong>Pay after service</strong><div className="muted" style={{ fontWeight: 400 }}>Cash or UPI to the professional when the job is done.</div></div>

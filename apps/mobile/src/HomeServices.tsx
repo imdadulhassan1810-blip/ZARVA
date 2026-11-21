@@ -170,6 +170,8 @@ function Checkout({ t, header, card, cart, lines, totals, onAddAddress, onBooked
   const [day, setDay] = useState(0);
   const [slot, setSlot] = useState<string | null>(null);
   const [payMode, setPayMode] = useState<HomePayMode>("after_service");
+  // Off while the server's Razorpay keys are test keys (no real money would move).
+  const [onlineOk, setOnlineOk] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [key] = useState(() => `app-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -181,6 +183,7 @@ function Checkout({ t, header, card, cart, lines, totals, onAddAddress, onBooked
 
   useEffect(() => {
     void loadAddresses().catch((e: Error) => setError(e.message));
+    api.home.catalog(CITY).then((r) => setOnlineOk(r.onlinePayment !== false)).catch(() => setOnlineOk(false));
     if (cart.categoryId) api.home.slots(CITY, cart.categoryId).then((r) => {
       setDays(r.days);
       const first = r.days.findIndex((d) => d.slots.some((s) => s.available));
@@ -253,7 +256,7 @@ function Checkout({ t, header, card, cart, lines, totals, onAddAddress, onBooked
       </View>
 
       <Text style={{ color: t.text, fontWeight: "600", fontSize: t.fontSize.lg }}>3. Payment</Text>
-      {(["after_service", "online"] as HomePayMode[]).map((m) => (
+      {((onlineOk ? ["after_service", "online"] : ["after_service"]) as HomePayMode[]).map((m) => (
         <Pressable key={m} accessibilityRole="radio" accessibilityState={{ checked: payMode === m }} onPress={() => setPayMode(m)}
           style={[card, { borderColor: payMode === m ? t.primary : t.border, borderWidth: payMode === m ? 2 : 1 }]}>
           <Text style={{ color: t.text, fontWeight: "600" }}>{m === "online" ? "Pay now (UPI / card)" : "Pay after service"}</Text>

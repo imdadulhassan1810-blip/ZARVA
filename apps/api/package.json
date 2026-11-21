@@ -15,19 +15,19 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.17",
-    "@fastify/cors": "10.0.2",
-    "@fastify/helmet": "13.0.1",
+    "@fastify/cors": "11.4.3",
+    "@fastify/helmet": "13.2.0",
     "@zarva/brand": "workspace:*",
     "@zarva/core": "workspace:*",
     "@zarva/payments": "workspace:*",
-    "drizzle-orm": "0.38.4",
-    "fastify": "5.2.1",
+    "drizzle-orm": "0.45.4",
+    "fastify": "5.12.8",
     "jose": "5.9.6",
     "postgres": "3.4.5",
     "zod": "3.24.1"
   },
   "devDependencies": {
-    "drizzle-kit": "0.30.2",
+    "drizzle-kit": "0.31.11",
     "tsx": "4.19.2",
     "vitest": "3.0.4"
   }

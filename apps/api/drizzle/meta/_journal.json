@@ -43,6 +43,13 @@
       "when": 1795270859246,
       "tag": "0005_portals_and_admin_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795277868567,
+      "tag": "0006_otp_ip_limits",
+      "breakpoints": true
     }
   ]
 }

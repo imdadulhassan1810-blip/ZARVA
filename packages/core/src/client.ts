@@ -28,8 +28,23 @@ const H = "/v1/m/home";
  */
 export type Portal = "customer" | "partner" | "admin";
 
+/**
+ * Where the long-lived refresh token lives. The phone apps keep it in the device's secure store
+ * (the default: it travels in the TokenStore). The website hands sign-in, refresh and sign-out to
+ * its own server, which keeps the refresh token in an httpOnly cookie that page scripts can't read.
+ */
+export interface SessionKeeper {
+  /** Calls a sign-in endpoint (e.g. "/v1/auth/otp/verify") and returns its body without the refresh token. */
+  login<R>(path: string, body: unknown): Promise<R>;
+  refresh(): Promise<{ accessToken: string; expiresIn: number }>;
+  logout(): Promise<void>;
+}
+
+/** Placeholder kept in the TokenStore when the real refresh token is held by a SessionKeeper. */
+export const REFRESH_IN_COOKIE = "cookie";
+
 /** Tiny typed client shared by web and mobile. Refreshes the access token once on 401. */
-export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: typeof fetch = fetch, portal: Portal = "customer") {
+export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: typeof fetch = fetch, portal: Portal = "customer", keeper?: SessionKeeper) {
   const authBase = portal === "admin" ? "/v1/admin/auth" : "/v1/auth";
   async function raw<T>(method: string, path: string, body?: unknown, auth = true): Promise<T> {
     const headers: Record<string, string> = {};
@@ -49,18 +64,34 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
     return json as T;
   }
 
+  // Refresh tokens rotate and a reused one ends the session (theft protection), so when several
+  // requests hit an expired access token at once they must share ONE refresh, not race.
+  let refreshing: Promise<void> | null = null;
+  function refreshOnce(tokens: AuthTokens): Promise<void> {
+    refreshing ??= (async () => {
+      const fresh = keeper
+        ? { ...(await keeper.refresh()), refreshToken: REFRESH_IN_COOKIE }
+        : await raw<AuthTokens>("POST", `${authBase}/refresh`, { refreshToken: tokens.refreshToken }, false);
+      store.set(fresh);
+    })().finally(() => { refreshing = null; });
+    return refreshing;
+  }
+
   async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const sent = store.get();
     try {
       return await raw<T>(method, path, body);
     } catch (e) {
       const tokens = store.get();
       if (e instanceof ApiRequestError && e.status === 401 && tokens) {
-        try {
-          const fresh = await raw<AuthTokens>("POST", `${authBase}/refresh`, { refreshToken: tokens.refreshToken }, false);
-          store.set(fresh);
-        } catch {
-          store.set(null);
-          throw e;
+        // Another request may already have refreshed while this one was in flight.
+        if (tokens.accessToken === sent?.accessToken) {
+          try {
+            await refreshOnce(tokens);
+          } catch {
+            store.set(null);
+            throw e;
+          }
         }
         return raw<T>(method, path, body);
       }
@@ -69,8 +100,8 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
   }
 
   async function login<R extends AuthTokens = LoginResult>(path: string, body: unknown): Promise<R> {
-    const r = await raw<R>("POST", path, body, false);
-    store.set({ accessToken: r.accessToken, refreshToken: r.refreshToken, expiresIn: r.expiresIn });
+    const r = keeper ? await keeper.login<R>(path, body) : await raw<R>("POST", path, body, false);
+    store.set({ accessToken: r.accessToken, refreshToken: keeper ? REFRESH_IN_COOKIE : r.refreshToken, expiresIn: r.expiresIn });
     return r;
   }
 
@@ -88,7 +119,8 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
     verifyEmailLink: (email: string, code: string) => call<{ user: PublicUser }>("POST", "/v1/me/email/verify", { email, code }),
     logout: async () => {
       const t = store.get();
-      if (t) await raw("POST", `${authBase}/logout`, { refreshToken: t.refreshToken }, false).catch(() => undefined);
+      if (keeper) await keeper.logout().catch(() => undefined);
+      else if (t) await raw("POST", `${authBase}/logout`, { refreshToken: t.refreshToken }, false).catch(() => undefined);
       store.set(null);
     },
     me: () => call<{ user: PublicUser }>("GET", "/v1/me"),
@@ -113,7 +145,7 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
     home: {
       cities: () => raw<{ cities: HomeCity[] }>("GET", `${H}/cities`, undefined, false),
       catalog: (city: string) =>
-        raw<{ city: HomeCity; categories: HomeCategory[]; services: HomeService[] }>("GET", `${H}/catalog?city=${encodeURIComponent(city)}`, undefined, false),
+        raw<{ city: HomeCity; categories: HomeCategory[]; services: HomeService[]; onlinePayment?: boolean }>("GET", `${H}/catalog?city=${encodeURIComponent(city)}`, undefined, false),
       slots: (city: string, categoryId: string) =>
         raw<{ days: HomeSlotDay[] }>("GET", `${H}/slots?city=${encodeURIComponent(city)}&categoryId=${categoryId}`, undefined, false),
       createBooking: (b: HomeCreateBooking) => call<{ booking: HomeBooking; payment: HomePaymentStart | null }>("POST", `${H}/bookings`, b),

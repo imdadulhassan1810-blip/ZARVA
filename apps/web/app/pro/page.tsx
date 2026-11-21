@@ -1,8 +1,10 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { formatPhone, formatRupees, type HomeBooking, type HomeCategory, type HomePro } from "@zarva/core";
+import { formatPhone, formatRupees, type HomeBooking, type HomeCategory, type HomeEarnings, type HomePro } from "@zarva/core";
 import { StatusChip, itemsLine, when } from "../../components/BookingBits";
+import { BalanceCard, LedgerList, PayoutChip } from "../../components/Ledger";
+import { Payout, ProOnboarding } from "../../components/ProOnboarding";
 import { api, isSignedIn } from "../../lib/api";
 
 /** Service professional's screen. Built mobile-first: pros use it on their phone between jobs. */
@@ -14,6 +16,7 @@ export default function Pro() {
   const [codes, setCodes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<"jobs" | "earnings">("jobs");
 
   const loadJobs = useCallback(async () => setJobs(await api.home.proJobs()), []);
 
@@ -39,12 +42,14 @@ export default function Pro() {
   }
 
   if (pro === undefined) return <p className="muted">Loading…</p>;
-  if (pro === null) return <Apply cats={cats} onDone={setPro} />;
-  if (pro.status !== "active") {
+  if (pro === null || pro.status === "draft" || pro.status === "rejected" || pro.status === "pending") {
+    return <ProOnboarding pro={pro} cats={cats} onChange={setPro} />;
+  }
+  if (pro.status === "suspended") {
     return (
       <div style={{ maxWidth: 560, margin: "0 auto" }}>
         <h1>Hi {pro.name}</h1>
-        <div className="card">{pro.status === "pending" ? "Your profile is under review. We'll call you to verify your ID and skills, usually within 2 working days." : "Your profile is suspended. Please call ZARVA partner support."}</div>
+        <div className="card">Your profile is suspended. Please call ZARVA partner support.</div>
       </div>
     );
   }
@@ -70,9 +75,14 @@ export default function Pro() {
 
   return (
     <div style={{ maxWidth: 680, margin: "0 auto 64px" }}>
-      <h1>Partner jobs</h1>
+      <h1>Partner</h1>
       <p className="muted" style={{ marginTop: 0 }}>{pro.name} · {pro.locality ?? "Durgapur"} · {pro.jobsDone} jobs done</p>
+      <div className="segmented" role="tablist" style={{ marginBottom: 8 }}>
+        <button role="tab" aria-selected={tab === "jobs"} className={tab === "jobs" ? "on" : ""} onClick={() => setTab("jobs")}>Jobs</button>
+        <button role="tab" aria-selected={tab === "earnings"} className={tab === "earnings" ? "on" : ""} onClick={() => setTab("earnings")}>Earnings</button>
+      </div>
       {error && <p className="error" role="alert">{error}</p>}
+      {tab === "earnings" ? <Earnings pro={pro} onPro={setPro} /> : <>
 
       <h2>Your jobs</h2>
       <div className="stack">
@@ -109,41 +119,39 @@ export default function Pro() {
           </div>
         ))}
       </div>
+      </>}
     </div>
   );
 }
 
-function Apply({ cats, onDone }: { cats: HomeCategory[]; onDone: (p: HomePro) => void }) {
-  const [name, setName] = useState("");
-  const [locality, setLocality] = useState("");
-  const [picked, setPicked] = useState<string[]>([]);
+function Earnings({ pro, onPro }: { pro: HomePro; onPro: (p: HomePro) => void }) {
+  const [e, setE] = useState<HomeEarnings | null>(null);
+  const [editPayout, setEditPayout] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => { api.home.proEarnings().then(setE).catch((x: Error) => setError(x.message)); }, []);
+  if (error) return <p className="error">{error}</p>;
+  if (!e) return <p className="muted">Loading…</p>;
   return (
-    <div style={{ maxWidth: 560, margin: "0 auto 64px" }}>
-      <h1>Become a ZARVA partner</h1>
-      <p className="muted">Get jobs near you in Durgapur on your phone, at fixed prices.</p>
-      <form className="card stack" onSubmit={async (e) => {
-        e.preventDefault();
-        setError(null);
-        try {
-          onDone((await api.home.proApply({ name: name.trim(), cityId: "durgapur", categoryIds: picked, locality: locality.trim() || undefined })).pro);
-        } catch (err) { setError((err as Error).message); }
-      }}>
-        <label>Full name (as on Aadhaar)<input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} /></label>
-        <label>Your area in Durgapur<input value={locality} onChange={(e) => setLocality(e.target.value)} placeholder="e.g. Benachity" /></label>
-        <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
-          <legend style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>What work do you do?</legend>
-          {cats.map((c) => (
-            <label key={c.id} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <input type="checkbox" style={{ minHeight: 20, width: 20 }} checked={picked.includes(c.id)}
-                onChange={(e) => setPicked(e.target.checked ? [...picked, c.id] : picked.filter((x) => x !== c.id))} />
-              {c.icon} {c.name}
-            </label>
-          ))}
-        </fieldset>
-        {error && <p className="error">{error}</p>}
-        <button className="btn" disabled={picked.length === 0 || name.trim().length < 2}>Apply</button>
-      </form>
+    <div className="stack">
+      <BalanceCard e={e} />
+      {e.balancePaise < 0 && <p className="muted" style={{ margin: 0 }}>This is commission on jobs where you collected cash. It is taken from your next online-paid jobs, or you can pay it to ZARVA by UPI.</p>}
+      <h2 style={{ marginBottom: 0 }}>Payouts</h2>
+      <div className="card stack">
+        <div className="sum-row">
+          <span>Paid to <strong>{pro.payout.upi ?? pro.payout.bankAccountMasked ?? "not set"}</strong></span>
+          <button className="btn btn-ghost" onClick={() => setEditPayout(!editPayout)}>{editPayout ? "Close" : "Change"}</button>
+        </div>
+        {editPayout && <Payout pro={pro} submitLabel="Save payout account" onSaved={(p) => { onPro(p); setEditPayout(false); }} />}
+        {e.payouts.length === 0 && <span className="muted">No payouts yet. ZARVA pays your balance every week.</span>}
+        {e.payouts.map((p) => (
+          <div key={p.id} className="sum-row">
+            <span>{new Date(p.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {p.destination}{p.utr ? ` · Ref ${p.utr}` : ""}</span>
+            <span><strong>{formatRupees(p.amountPaise)}</strong> <PayoutChip p={p} /></span>
+          </div>
+        ))}
+      </div>
+      <h2 style={{ marginBottom: 0 }}>History</h2>
+      <LedgerList entries={e.entries} />
     </div>
   );
 }

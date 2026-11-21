@@ -26,3 +26,5 @@ export function formatPaise(p: number): string {
   const r = p / 100;
   return `₹${r.toLocaleString("en-IN", { minimumFractionDigits: p % 100 === 0 ? 0 : 2, maximumFractionDigits: 2 })}`;
 }
+
+export * from "./payouts";

@@ -1,0 +1,78 @@
+# One-click setup on Render (https://render.com): Dashboard → New → Blueprint → pick this repository.
+# Creates the API, the website and a PostgreSQL database. Fill in the "sync: false" values when Render asks.
+# Step-by-step guide: docs/deploy.md
+databases:
+  - name: zarva-db
+    databaseName: zarva
+    user: zarva
+    plan: basic-256mb
+    region: singapore
+
+services:
+  - type: web
+    name: zarva-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api
+    region: singapore
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase: { name: zarva-db, property: connectionString }
+      - key: JWT_SECRET
+        generateValue: true
+      - key: KYC_ENCRYPTION_KEY
+        generateValue: true
+      - key: PUBLIC_WEB_URL
+        sync: false # e.g. https://zarva.in
+      - key: CORS_ORIGINS
+        sync: false # same as PUBLIC_WEB_URL
+      - key: OTP_PROVIDER
+        value: msg91
+      - key: MSG91_AUTH_KEY
+        sync: false
+      - key: MSG91_TEMPLATE_ID
+        sync: false
+      - key: SMS_PROVIDER
+        value: "off" # switch to msg91 once DLT templates are approved
+      - key: MSG91_SMS_TEMPLATES
+        sync: false
+      - key: WHATSAPP_PROVIDER
+        value: "off" # switch to meta once WhatsApp templates are approved
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: PAYMENT_PROVIDER
+        value: razorpay
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: PAYOUT_PROVIDER
+        value: manual
+      - key: ADMIN_PHONES
+        sync: false
+      - key: ADMIN_TOTP_SECRETS
+        sync: false
+
+  - type: web
+    name: zarva-web
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @zarva/web build
+    startCommand: pnpm --filter @zarva/web start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NEXT_PUBLIC_API_URL
+        sync: false # e.g. https://api.zarva.in (the zarva-api address)

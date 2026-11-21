@@ -37,6 +37,8 @@ export const profileUpdateSchema = z
     name: z.string().trim().min(1).max(80),
     // Email is not editable here: it is set only by verifying it (code or Google).
     preferredLanguage: z.enum(["en", "hi", "bn"]),
+    /** Booking updates on WhatsApp as well as SMS. WhatsApp rules need the person's opt-in. */
+    whatsappOptIn: z.boolean(),
   })
   .partial();
 

@@ -5,7 +5,10 @@ import { setupTestApp } from "./helpers";
 
 const SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"; // "12345678901234567890", the RFC 6238 test key
 const ADMIN = "9999900000";
-const REAL = { OTP_PROVIDER: "msg91", EMAIL_PROVIDER: "resend", PAYMENT_PROVIDER: "razorpay", JWT_SECRET: "a-real-secret-a-real-secret-a-real-secret" };
+const REAL = {
+  OTP_PROVIDER: "msg91", EMAIL_PROVIDER: "resend", PAYMENT_PROVIDER: "razorpay", JWT_SECRET: "a-real-secret-a-real-secret-a-real-secret",
+  SMS_PROVIDER: "off", WHATSAPP_PROVIDER: "off", KYC_ENCRYPTION_KEY: "a-real-kyc-key-a-real-kyc-key-a-real-kyc-key",
+};
 
 describe("authenticator codes (TOTP)", () => {
   it("matches the RFC 6238 test vector and base32 round-trips", () => {

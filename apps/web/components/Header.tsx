@@ -16,6 +16,9 @@ export function Header() {
         <Logo width={128} />
       </Link>
       <nav style={{ display: "flex", gap: 8 }}>
+        {!pathname.startsWith("/pro") && !pathname.startsWith("/partner") && !pathname.startsWith("/admin") && (
+          <Link className="btn btn-ghost hide-sm" href="/partner">Become a partner</Link>
+        )}
         {signedIn && <Link className="btn btn-ghost hide-sm" href="/home-services/bookings">Bookings</Link>}
         <Link className="btn btn-ghost" href={signedIn ? "/account" : "/login"}>
           {signedIn ? "Account" : "Sign in"}

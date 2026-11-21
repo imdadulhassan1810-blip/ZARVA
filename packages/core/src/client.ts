@@ -2,7 +2,8 @@ import type { Address, AuthProviders, AuthTokens, LoginResult, PublicUser } from
 import type { ModuleStatus } from "./modules";
 import type { AddressInput, ProfileUpdate } from "./schemas";
 import type {
-  HomeBooking, HomeBookingStatus, HomeCategory, HomeCity, HomeCreateBooking, HomePro, HomeProApply, HomeService, HomeSlotDay,
+  HomeAdminCategory, HomeBooking, HomeBookingStatus, HomeCategory, HomeCity, HomeCreateBooking, HomeEarnings, HomePayout, HomePro,
+  HomeProApply, HomeProBalance, HomeProDocKind, HomeProPayoutInput, HomeProUpdate, HomeService, HomeSlotDay,
 } from "./home";
 
 export interface HomePaymentStart { id: string; status: string; clientPayload: Record<string, unknown> }
@@ -34,6 +35,8 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (res.status === 204) return undefined as T;
+    // Files (KYC documents) come back as bytes, everything else as JSON.
+    if (res.ok && !(res.headers.get("content-type") ?? "").includes("json")) return (await res.blob()) as T;
     const json = (await res.json().catch(() => ({}))) as { error?: { code: string; message: string } };
     if (!res.ok) throw new ApiRequestError(res.status, json.error?.code ?? "unknown", json.error?.message ?? res.statusText);
     return json as T;
@@ -114,13 +117,33 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
       proAccept: (id: string) => call<{ booking: HomeBooking }>("POST", `${H}/pro/jobs/${id}/accept`, {}),
       proStatus: (id: string, status: "on_the_way" | "in_progress" | "completed", startCode?: string) =>
         call<{ booking: HomeBooking }>("POST", `${H}/pro/jobs/${id}/status`, { status, startCode }),
+      proUpdate: (p: HomeProUpdate) => call<{ pro: HomePro }>("PATCH", `${H}/pro/me`, p),
+      proUploadDoc: (kind: HomeProDocKind, mime: string, dataBase64: string) =>
+        call<{ pro: HomePro }>("PUT", `${H}/pro/me/documents/${kind}`, { mime, dataBase64 }),
+      proSetPayout: (p: HomeProPayoutInput) => call<{ pro: HomePro }>("PUT", `${H}/pro/me/payout`, p),
+      proSubmit: () => call<{ pro: HomePro }>("POST", `${H}/pro/me/submit`, {}),
+      proEarnings: () => call<HomeEarnings>("GET", `${H}/pro/earnings`),
 
       admin: {
         bookings: (status?: HomeBookingStatus) => call<{ bookings: HomeBooking[] }>("GET", `${H}/admin/bookings${status ? `?status=${status}` : ""}`),
         assign: (id: string, proId: string) => call<{ booking: HomeBooking }>("POST", `${H}/admin/bookings/${id}/assign`, { proId }),
         cancel: (id: string, reason: string) => call<{ booking: HomeBooking }>("POST", `${H}/admin/bookings/${id}/cancel`, { reason }),
         pros: () => call<{ pros: HomePro[] }>("GET", `${H}/admin/pros`),
-        setProStatus: (id: string, status: HomePro["status"]) => call<{ pro: HomePro }>("PATCH", `${H}/admin/pros/${id}`, { status }),
+        setProStatus: (id: string, status: "active" | "suspended") => call<{ pro: HomePro }>("PATCH", `${H}/admin/pros/${id}`, { status }),
+        rejectPro: (id: string, reason: string) => call<{ pro: HomePro }>("POST", `${H}/admin/pros/${id}/reject`, { reason }),
+        /** The KYC file itself (image or PDF). */
+        proDocument: (id: string, kind: HomeProDocKind) => call<Blob>("GET", `${H}/admin/pros/${id}/documents/${kind}`),
+        categories: () => call<{ categories: HomeAdminCategory[] }>("GET", `${H}/admin/categories`),
+        setCommission: (id: string, commissionBps: number) =>
+          call<{ category: HomeAdminCategory }>("PATCH", `${H}/admin/categories/${id}`, { commissionBps }),
+        balances: () => call<{ pros: HomeProBalance[]; payouts: HomePayout[] }>("GET", `${H}/admin/payouts`),
+        ledger: (proId: string) => call<HomeEarnings>("GET", `${H}/admin/pros/${proId}/ledger`),
+        createPayout: (proId: string, amountPaise: number, note?: string) =>
+          call<{ payout: HomePayout }>("POST", `${H}/admin/pros/${proId}/payouts`, { amountPaise, note }),
+        markPayoutPaid: (id: string, utr: string) => call<{ payout: HomePayout }>("POST", `${H}/admin/payouts/${id}/paid`, { utr }),
+        markPayoutFailed: (id: string, reason: string) => call<{ payout: HomePayout }>("POST", `${H}/admin/payouts/${id}/failed`, { reason }),
+        adjust: (proId: string, amountPaise: number, note: string) =>
+          call<{ balancePaise: number }>("POST", `${H}/admin/pros/${proId}/adjustments`, { amountPaise, note }),
         services: () => call<{ services: HomeService[] }>("GET", `${H}/admin/services`),
         updateService: (id: string, patch: { pricePaise?: number; active?: boolean }) =>
           call<{ service: HomeService }>("PATCH", `${H}/admin/services/${id}`, patch),

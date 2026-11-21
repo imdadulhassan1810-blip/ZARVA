@@ -28,6 +28,25 @@ const envSchema = z.object({
    */
   ADMIN_TOTP_SECRETS: z.string().default(""),
   CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:8081"),
+  /** The customer website, used in links inside messages. */
+  PUBLIC_WEB_URL: z.string().url().default("http://localhost:3000"),
+
+  /**
+   * Booking updates. "console" prints them in the API terminal (dev). "off" sends nothing.
+   * SMS needs DLT-registered templates (see docs/notifications.md); WhatsApp needs Meta-approved templates.
+   */
+  SMS_PROVIDER: z.enum(["console", "msg91", "memory", "off"]).default("console"),
+  /** "booking_confirmed:<msg91 template id>,pro_assigned:<id>,..." */
+  MSG91_SMS_TEMPLATES: z.string().default(""),
+  WHATSAPP_PROVIDER: z.enum(["console", "meta", "memory", "off"]).default("console"),
+  WHATSAPP_TOKEN: z.string().optional(),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+  WHATSAPP_TEMPLATE_LANG: z.string().default("en"),
+
+  /** "manual": admin pays by UPI and records the reference. "razorpayx": automatic, after Razorpay KYC. */
+  PAYOUT_PROVIDER: z.enum(["manual", "razorpayx"]).default("manual"),
+  /** Encrypts KYC documents in the database. 32+ random characters; never change it once set. */
+  KYC_ENCRYPTION_KEY: z.string().min(32, "KYC_ENCRYPTION_KEY must be at least 32 characters").optional(),
 });
 export type Config = z.infer<typeof envSchema> & {
   /**
@@ -63,6 +82,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     if (base.JWT_SECRET.startsWith("local-dev-only")) throw new Error("Set a real JWT_SECRET in production");
     if (base.EMAIL_PROVIDER !== "resend") throw new Error("Production must send real email (EMAIL_PROVIDER=resend)");
     if (base.DATABASE_URL.startsWith("pglite")) throw new Error("Production must use PostgreSQL, not the demo database");
+    if (base.PUBLIC_WEB_URL.includes("localhost")) throw new Error("Set PUBLIC_WEB_URL to your website address in production");
   }
   const codesStayLocal = base.OTP_PROVIDER !== "msg91" && base.EMAIL_PROVIDER !== "resend";
   const devShortcuts = base.NODE_ENV !== "production" && codesStayLocal;
@@ -71,6 +91,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     if (base.JWT_SECRET.startsWith("local-dev-only")) throw new Error("Real SMS/email is configured: set a real JWT_SECRET");
     // The mock provider's signing key is public (it's in this repo): anyone could fake "paid".
     if (base.PAYMENT_PROVIDER === "mock") throw new Error("Real SMS/email is configured: PAYMENT_PROVIDER must be razorpay");
+    // Customers' phone numbers and messages must not pile up in a server log.
+    if (base.SMS_PROVIDER === "console" || base.SMS_PROVIDER === "memory") throw new Error("Real deployment: set SMS_PROVIDER to msg91 (or off until DLT is approved)");
+    if (base.WHATSAPP_PROVIDER === "console" || base.WHATSAPP_PROVIDER === "memory") throw new Error("Real deployment: set WHATSAPP_PROVIDER to meta (or off)");
+    if (!base.KYC_ENCRYPTION_KEY) throw new Error("Real deployment: set KYC_ENCRYPTION_KEY (32+ random characters) to protect partner ID documents");
   }
 
   // Local convenience only: sign in as 99999 00000 to open /admin.

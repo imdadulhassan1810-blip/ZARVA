@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
-  bigserial, boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid,
+  bigserial, boolean, customType, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid,
 } from "drizzle-orm/pg-core";
 import { addresses, payments, users } from "../../db/schema";
 
@@ -15,7 +15,15 @@ export const homeBookingStatusEnum = pgEnum("home_booking_status", [
   "pending_payment", "confirmed", "assigned", "on_the_way", "in_progress", "completed", "cancelled",
 ]);
 export const homePayModeEnum = pgEnum("home_pay_mode", ["online", "after_service"]);
-export const homeProStatusEnum = pgEnum("home_pro_status", ["pending", "active", "suspended"]);
+// draft/rejected were added later; Postgres appends enum values, so the order here matches the database.
+export const homeProStatusEnum = pgEnum("home_pro_status", ["pending", "active", "suspended", "draft", "rejected"]);
+export const homeLedgerKindEnum = pgEnum("home_ledger_kind", ["job_earning", "cash_collected", "payout", "payout_reversal", "adjustment"]);
+export const homePayoutStatusEnum = pgEnum("home_payout_status", ["processing", "manual", "paid", "failed"]);
+
+const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
+  dataType: () => "bytea",
+  fromDriver: (v) => (Buffer.isBuffer(v) ? v : Buffer.from(v)),
+});
 
 /** A city we serve (or will). Serviceability is decided by PIN code. */
 export const homeCities = pgTable("home_cities", {
@@ -35,6 +43,8 @@ export const homeCategories = pgTable("home_categories", {
   description: text("description").notNull(),
   sort: integer("sort").notNull().default(0),
   active: boolean("active").notNull().default(true),
+  /** ZARVA's commission on the job price, in basis points (2000 = 20%). Edited in admin. */
+  commissionBps: integer("commission_bps").notNull().default(2000),
 });
 
 export const homeServices = pgTable(
@@ -66,9 +76,40 @@ export const homePros = pgTable(
     categoryIds: uuid("category_ids").array().notNull(),
     locality: text("locality"),
     status: homeProStatusEnum("status").notNull().default("pending"),
+    experienceYears: integer("experience_years"),
+    idType: text("id_type"),
+    rejectionReason: text("rejection_reason"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    reviewedBy: uuid("reviewed_by").references(() => users.id),
+    // Where ZARVA sends this pro's money. UPI preferred; bank account as fallback.
+    payoutAccountName: text("payout_account_name"),
+    payoutUpi: text("payout_upi"),
+    payoutBankAccount: text("payout_bank_account"),
+    payoutIfsc: text("payout_ifsc"),
     ...timestamps,
   },
   (t) => [index("home_pros_city_idx").on(t.cityId, t.status)],
+);
+
+/**
+ * KYC files. Stored in the database, encrypted (AES-256-GCM, KYC_ENCRYPTION_KEY), and only ever
+ * served through admin APIs. One file per kind per pro; uploading again replaces it.
+ */
+export const homeProDocuments = pgTable(
+  "home_pro_documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    proId: uuid("pro_id").notNull().references(() => homePros.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    mime: text("mime").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    sha256: text("sha256").notNull(),
+    /** iv (12 bytes) + auth tag (16 bytes) + ciphertext. */
+    data: bytea("data").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("home_pro_documents_kind_idx").on(t.proId, t.kind)],
 );
 
 export const homeBookings = pgTable(
@@ -138,4 +179,65 @@ export const homeBookingEvents = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("home_booking_events_booking_idx").on(t.bookingId, t.seq)],
+);
+
+/** Money between ZARVA and each pro. Never updated or deleted: corrections are new rows. See HomeLedgerKind. */
+export const homeProLedger = pgTable(
+  "home_pro_ledger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    proId: uuid("pro_id").notNull().references(() => homePros.id),
+    kind: homeLedgerKindEnum("kind").notNull(),
+    /** Signed paise. + ZARVA owes the pro, - the pro owes ZARVA. */
+    amountPaise: integer("amount_paise").notNull(),
+    bookingId: uuid("booking_id").references(() => homeBookings.id),
+    payoutId: uuid("payout_id"),
+    /** For job earnings: the job price and ZARVA's cut, so the pro can see how the number was made. */
+    grossPaise: integer("gross_paise"),
+    commissionPaise: integer("commission_paise"),
+    note: text("note"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("home_pro_ledger_pro_idx").on(t.proId, t.seq),
+    // A job is earned once, and cash for it is collected once, whatever retries happen.
+    uniqueIndex("home_pro_ledger_booking_kind_idx").on(t.bookingId, t.kind).where(sql`${t.bookingId} is not null`),
+    uniqueIndex("home_pro_ledger_payout_kind_idx").on(t.payoutId, t.kind).where(sql`${t.payoutId} is not null`),
+  ],
+);
+
+export const homePayouts = pgTable(
+  "home_payouts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    proId: uuid("pro_id").notNull().references(() => homePros.id),
+    amountPaise: integer("amount_paise").notNull(),
+    status: homePayoutStatusEnum("status").notNull(),
+    provider: text("provider").notNull(),
+    providerPayoutId: text("provider_payout_id").unique(),
+    /** Copy of where the money went, e.g. "UPI subrata@okaxis". */
+    destination: text("destination").notNull(),
+    utr: text("utr"),
+    failureReason: text("failure_reason"),
+    note: text("note"),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    ...timestamps,
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+  },
+  (t) => [index("home_payouts_pro_idx").on(t.proId, t.createdAt)],
+);
+
+/** Payout webhooks we accepted, deduped by provider event id. */
+export const homePayoutEvents = pgTable(
+  "home_payout_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").notNull(),
+    eventId: text("event_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("home_payout_events_dedupe_idx").on(t.provider, t.eventId)],
 );

@@ -14,8 +14,10 @@ This repository is the **vertical-agnostic foundation** (sign-in, profiles, addr
 | Web | Next.js 15.5 (App Router) + PWA manifest | SEO for landing pages, installable on Android |
 | Mobile | Expo SDK 58 (React Native 0.88) | One codebase for Android and iOS; OTA updates |
 | Auth | Phone OTP, email code, Google; JWT access token (15 min) + rotating refresh token (60 days) | No passwords to leak or reset; verified phone required before booking |
-| SMS | MSG91 adapter (console sender in dev) | Needs DLT registration before go-live |
+| SMS / WhatsApp | MSG91 (SMS) and WhatsApp Cloud API adapters behind one interface, outbox with retries; console in dev | Needs DLT / Meta template approval before go-live |
 | Payments | Provider interface; Razorpay adapter (UPI first) + mock | Swap provider without touching verticals |
+| Payouts to partners | Provider interface; manual UPI (default) or RazorpayX | Pay partners today, automate after Razorpay KYC |
+| Hosting | Render blueprint (`render.yaml`), API Docker image | One click from GitHub; see [docs/deploy.md](docs/deploy.md) |
 
 ## Layout
 
@@ -80,6 +82,10 @@ The phone finds the API on your computer automatically. If it can't (some office
 
 Copy `.env.example` to `.env`, set `DATABASE_URL=postgres://zarva:zarva@localhost:5432/zarva_dev`, and start Postgres (`docker compose up -d`). Migrations run automatically when the API starts. The API tests need a `zarva_test` Postgres database (`createdb -O zarva zarva_test`); then run `pnpm test`.
 
+## Put it online
+
+Step-by-step, browser only: **[docs/deploy.md](docs/deploy.md)** (Render + PostgreSQL + your domain, about ₹1,700 a month). Booking SMS / WhatsApp setup: [docs/notifications.md](docs/notifications.md).
+
 ## Google sign-in (real, when you're ready)
 
 Free, about 10 minutes, and needs a Google account:
@@ -122,6 +128,8 @@ Google sign-in on the **mobile app** needs a custom Expo development build (it d
 | POST | /v1/payments/webhook/:provider | signature | Provider webhook, deduped by event id |
 | GET | /v1/modules | - | Which verticals exist and which are on |
 
+Home services routes (`/v1/m/home/...`: catalogue, bookings, partner sign-up and KYC, earnings, admin, payouts) are described in [docs/home-services.md](docs/home-services.md).
+
 ## Adding a vertical
 
 1. Replace the placeholder in `apps/api/src/modules/index.ts` with a real module in `src/modules/<id>/`.
@@ -131,8 +139,10 @@ Google sign-in on the **mobile app** needs a custom Expo development build (it d
 
 ## Before going live
 
-- **DLT registration** of SMS sender ID and OTP template (TRAI rule; 1-2 weeks). Without it MSG91 will not deliver.
+- **DLT registration** of SMS sender ID, the OTP template and the 12 booking-update templates in [docs/notifications.md](docs/notifications.md) (TRAI rule; 1-2 weeks). Without it MSG91 will not deliver.
 - **Razorpay KYC** and live keys; set the webhook URL to `/v1/payments/webhook/razorpay` with `payment.captured`, `payment.failed`.
+- **WhatsApp** (optional): Meta Business verification and the `zarva_*` templates.
+- **Partner terms** (commission, cash settlement) and a privacy notice for KYC documents, reviewed by a lawyer.
 - Move the web refresh token from localStorage to an httpOnly cookie.
 - Add per-IP rate limiting at the edge (Cloudflare) in addition to the per-number OTP limits.
 - Privacy notice + consent screen for the DPDP Act 2023.

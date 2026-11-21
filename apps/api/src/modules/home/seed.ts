@@ -45,7 +45,7 @@ export async function seedHomeDemoPros(db: Db): Promise<void> {
     const categoryIds = p.categories.map((s) => idBySlug.get(s)!).filter(Boolean);
     await db
       .insert(homePros)
-      .values({ userId: u!.id, name: p.name, cityId: "durgapur", categoryIds, locality: p.locality, status: "active" })
+      .values({ userId: u!.id, name: p.name, cityId: "durgapur", categoryIds, locality: p.locality, status: "active", approvedAt: new Date(), idType: "aadhaar_masked", payoutAccountName: p.name, payoutUpi: `${p.phone}@upi` })
       .onConflictDoUpdate({ target: homePros.userId, set: { name: p.name, categoryIds, locality: p.locality, status: "active" } });
   }
 }

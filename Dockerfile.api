@@ -1,0 +1,17 @@
+# ZARVA API. Build from the repository root:  docker build -f Dockerfile.api -t zarva-api .
+FROM node:22-slim
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
+# Install dependencies first so code changes don't redo this slow step.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY apps/api/package.json apps/api/
+COPY packages/brand/package.json packages/brand/
+COPY packages/core/package.json packages/core/
+COPY packages/payments/package.json packages/payments/
+RUN pnpm install --frozen-lockfile --filter @zarva/api...
+COPY packages packages
+COPY apps/api apps/api
+ENV NODE_ENV=production
+EXPOSE 4000
+# Migrations run automatically on start. The host sets PORT.
+CMD ["pnpm", "--filter", "@zarva/api", "start"]

@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import { parseEnabledModules, type ModuleStatus } from "@zarva/core";
-import { InvalidSignatureError, MockProvider, type PaymentProvider } from "@zarva/payments";
+import { InvalidSignatureError, ManualPayoutProvider, MockProvider, type PaymentProvider, type PayoutProvider } from "@zarva/payments";
 import { AuthService } from "./auth/service";
 import type { OtpSender } from "./auth/otp-sender";
 import { ConsoleEmailSender, type EmailSender } from "./auth/email-sender";
@@ -17,12 +17,23 @@ import { authRoutes } from "./routes/auth";
 import { meRoutes } from "./routes/me";
 import { paymentRoutes } from "./routes/payments";
 import { registerAdminGuard } from "./admin/guard";
+import { channelsFromConfig, NotificationService, type MessageChannel, type NotifyChannel } from "./notify";
+import { Vault } from "./lib/vault";
 
 declare module "fastify" {
   interface FastifyInstance {
     db: Db;
     config: Config;
-    services: { auth: AuthService; payments: PaymentService };
+    services: {
+      auth: AuthService;
+      payments: PaymentService;
+      /** SMS + WhatsApp updates (outbox). */
+      notify: NotificationService;
+      /** Money out to service professionals. */
+      payouts: PayoutProvider;
+      /** Encrypts KYC documents at rest. */
+      vault: Vault;
+    };
     requireAuth: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
     /** Signed in + verified phone in ADMIN_PHONES + authenticator code (see admin/guard.ts). */
     requireAdmin: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
@@ -44,6 +55,10 @@ export interface AppDeps {
   /** Defaults from config: live with GOOGLE_CLIENT_ID, demo in development without it, off in production without it. */
   googleVerifier?: GoogleVerifier | null;
   paymentProvider: PaymentProvider;
+  /** Defaults from SMS_PROVIDER / WHATSAPP_PROVIDER. */
+  notifyChannels?: Partial<Record<NotifyChannel, MessageChannel>>;
+  /** Defaults to manual payouts. */
+  payoutProvider?: PayoutProvider;
   logger?: boolean;
   now?: () => Date;
 }
@@ -85,7 +100,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.decorate("db", deps.db);
   app.decorate("config", deps.config);
   app.decorate("now", deps.now ?? (() => new Date()));
-  app.decorate("services", { auth, payments: new PaymentService(deps.db, deps.paymentProvider) });
+  const now = deps.now ?? (() => new Date());
+  const notify = new NotificationService(deps.db, deps.notifyChannels ?? channelsFromConfig(deps.config), now);
+  // Dev falls back to a key derived from JWT_SECRET; real deployments must set KYC_ENCRYPTION_KEY (config enforces it).
+  const vault = new Vault(deps.config.KYC_ENCRYPTION_KEY ?? `dev:${deps.config.JWT_SECRET}`);
+  app.decorate("services", {
+    auth, payments: new PaymentService(deps.db, deps.paymentProvider), notify, payouts: deps.payoutProvider ?? new ManualPayoutProvider(), vault,
+  });
+  app.addHook("onClose", async () => notify.stop());
   app.decorate("requireAuth", async (req: FastifyRequest) => {
     const h = req.headers.authorization;
     if (!h?.startsWith("Bearer ")) throw unauthorized();

@@ -7,6 +7,8 @@ export interface PublicUser {
   email: string | null;
   hasGoogle: boolean;
   preferredLanguage: "en" | "hi" | "bn";
+  /** Wants booking updates on WhatsApp too (SMS is always sent). */
+  whatsappOptIn: boolean;
   createdAt: string;
 }
 

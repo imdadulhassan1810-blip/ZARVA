@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { homeTotals, istInstant, type HomeBooking, type HomeService } from "@zarva/core";
-import { setupTestApp } from "./helpers";
+import { completeKyc, setupTestApp } from "./helpers";
 
 // Monday 23 Nov 2026, 09:00 IST. First bookable slot is 11:00 IST (2 h lead time).
 const START = new Date("2026-11-23T03:30:00.000Z");
@@ -51,6 +51,7 @@ async function makePro(phone: string, cats: string[], name = "Subrata Mondal") {
   const s = await login(phone);
   const a = await req("POST", `${P}/pro/apply`, s, { name, cityId: "durgapur", categoryIds: cats.map((x) => c.cat(x).id), locality: "Benachity" });
   expect(a.status).toBe(201);
+  await completeKyc(t.app, s.headers);
   const admin = await login(ADMIN);
   const ok = await req("PATCH", `${P}/admin/pros/${a.body.pro.id}`, admin, { status: "active" });
   expect(ok.body.pro.status).toBe("active");
@@ -236,6 +237,8 @@ describe("home services: professionals", () => {
     const c = await catalog();
     const proS = await login("9000000001");
     await req("POST", `${P}/pro/apply`, proS, { name: "Subrata Mondal", cityId: "durgapur", categoryIds: [c.cat("electrician").id] });
+    expect((await req("GET", `${P}/pro/jobs`, proS)).status).toBe(403);
+    await completeKyc(t.app, proS.headers);
     expect((await req("GET", `${P}/pro/jobs`, proS)).status).toBe(403);
     const admin = await login(ADMIN);
     const pros = (await req("GET", `${P}/admin/pros`, admin)).body.pros;

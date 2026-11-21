@@ -41,7 +41,17 @@ export interface AuthDeps {
   email: EmailSender;
   google: GoogleVerifier | null;
   now?: () => Date;
+  /** Abuse limits on sending codes. Every text costs money, so these cap the bill. */
+  limits?: Partial<CodeLimits>;
 }
+
+export interface CodeLimits {
+  /** Codes (SMS + email) one internet address may request per hour. */
+  perIpPerHour: number;
+  /** SMS codes the whole platform may send per hour. A ceiling on the SMS bill even if an attacker rotates addresses. */
+  smsPerHour: number;
+}
+export const DEFAULT_CODE_LIMITS: CodeLimits = { perIpPerHour: 20, smsPerHour: 500 };
 
 /**
  * Three ways in: phone OTP, email code, Google. They all land on the same users table.
@@ -52,7 +62,9 @@ export class AuthService {
   private db: Db;
   private secret: string;
   private now: () => Date;
+  private limits: CodeLimits;
   constructor(private deps: AuthDeps) {
+    this.limits = { ...DEFAULT_CODE_LIMITS, ...deps.limits };
     this.db = deps.db;
     this.secret = deps.secret;
     this.now = deps.now ?? (() => new Date());
@@ -86,6 +98,26 @@ export class AuthService {
       }
     }
     if (recent.length >= OTP_MAX_PER_HOUR) throw tooMany("Too many code requests. Try again in an hour", 3600);
+
+    // Stop one address (a script) asking codes for thousands of different numbers.
+    if (ip) {
+      const [byIp] = await this.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(otpChallenges)
+        .where(and(eq(otpChallenges.ip, ip), gt(otpChallenges.createdAt, hourAgo)));
+      if ((byIp?.n ?? 0) >= this.limits.perIpPerHour) throw tooMany("Too many code requests from this network. Try again in an hour", 3600);
+    }
+    // A ceiling on the SMS bill for the whole platform, even if the requests come from many addresses.
+    if (target.kind === "phone") {
+      const [sms] = await this.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(otpChallenges)
+        .where(and(sql`${otpChallenges.phone} is not null`, gt(otpChallenges.createdAt, hourAgo)));
+      if ((sms?.n ?? 0) >= this.limits.smsPerHour) {
+        console.error(`[auth] hourly SMS code limit (${this.limits.smsPerHour}) reached: possible SMS abuse`);
+        throw tooMany("Sign-in by SMS is very busy right now. Try again in a few minutes, or sign in with email.", 300);
+      }
+    }
 
     const code = generateOtp();
     // Only the newest code works.

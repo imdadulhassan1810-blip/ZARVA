@@ -27,7 +27,7 @@ Be clear about this before you tell anyone the site is live:
 |---|---|
 | **DLT** (SMS) | No SMS reaches anyone. Partners sign in **only** with an SMS code, so no partner can sign in. Customers can sign in by email, but booking needs a verified mobile number (sent by SMS), so **no customer can book**. Booking updates by SMS are off too. |
 | **WhatsApp (Meta)** | No WhatsApp updates. Everything else works. |
-| **Razorpay KYC** | With `rzp_test_` keys, "Pay online" takes **pretend money**: the customer sees "Paid" but you receive nothing. Don't let real customers pay online on test keys; ask them to choose **Pay after service**. |
+| **Razorpay KYC** | With `rzp_test_` keys, online payment would be **pretend money**, so the live site hides "Pay online" and customers can only choose **Pay after service**. It comes back by itself the moment you put in live keys (`rzp_live_...`). For a private test site only, `ALLOW_TEST_PAYMENTS=true` shows it anyway. |
 
 So: you can put the site online now to check that it runs, but real bookings in Durgapur start the day DLT is approved.
 
@@ -44,6 +44,11 @@ So: you can put the site online now to check that it runs, but real bookings in 
 6. Create your admin account: open **zarva-api → Shell** and run `pnpm admin:create ops "Your Name"`. Add the printed authenticator key to Google Authenticator on your phone, then sign in at `https://<website>/admin/login` and change the password under **Team**. There is no admin sign-up page, on purpose.
 
 If the API fails to start, open **zarva-api → Logs**. The API refuses to start with unsafe settings and says exactly which one, for example "Set PUBLIC_WEB_URL to your website address in production".
+
+### Built-in protection you can tune (zarva-api → Environment)
+
+- **Sign-in code limits.** One internet address can ask for at most `CODE_LIMIT_PER_IP_PER_HOUR` codes an hour (default 20), and the whole site sends at most `SMS_CODE_LIMIT_PER_HOUR` SMS codes an hour (default 500). The second one is a ceiling on your MSG91 bill if someone abuses the sign-in page; when it is hit, people are asked to sign in with email, and the API log says "hourly SMS code limit reached". Raise it as you grow.
+- **Website sign-in.** The long-lived sign-in token is kept in a secure cookie by the website's own server (`/session/...`), not in the browser's storage, so a malicious script on a page can't take over accounts. Nothing to set up.
 
 ## Step 2. Your own domain (about 30 minutes, plus waiting for DNS)
 

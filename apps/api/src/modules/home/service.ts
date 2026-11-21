@@ -33,6 +33,7 @@ export class HomeServicesService {
     private now: () => Date,
     private notify: NotificationService,
     private earnings: EarningsService,
+    private opts: { onlinePayments: boolean } = { onlinePayments: true },
   ) {
     payments.onStatusChange("home", (p, tx) => this.onPayment(p, tx));
   }
@@ -51,7 +52,7 @@ export class HomeServicesService {
     return city;
   }
 
-  async catalog(cityId: string): Promise<{ city: HomeCity; categories: HomeCategory[]; services: HomeService[] }> {
+  async catalog(cityId: string): Promise<{ city: HomeCity; categories: HomeCategory[]; services: HomeService[]; onlinePayment: boolean }> {
     const city = await this.activeCity(cityId);
     const cats = await this.db.select().from(homeCategories).where(eq(homeCategories.active, true)).orderBy(asc(homeCategories.sort));
     const svcs = await this.db
@@ -66,6 +67,7 @@ export class HomeServicesService {
         serviceCount: svcs.filter((s) => s.categoryId === c.id).length,
       })),
       services: svcs.map(toService),
+      onlinePayment: this.opts.onlinePayments,
     };
   }
 
@@ -149,6 +151,7 @@ export class HomeServicesService {
       name: addr.name, phone: addr.phone, line1: addr.line1, line2: addr.line2, landmark: addr.landmark, city: addr.city, pincode: addr.pincode,
     };
     const online = input.payMode === "online";
+    if (online && !this.opts.onlinePayments) throw badRequest("online_payment_off", "Online payment isn't available yet. Choose Pay after service.");
 
     const row = await this.db.transaction(async (tx) => {
       // Serialise bookings for the same slot so two customers can't take the last professional.
@@ -200,6 +203,7 @@ export class HomeServicesService {
   async pay(userId: string, bookingId: string): Promise<{ booking: HomeBooking; payment: PaymentOut }> {
     const b = await this.owned(userId, bookingId);
     if (b.status !== "pending_payment" || b.payMode !== "online") throw badRequest("not_payable", "This booking doesn't need payment");
+    if (!this.opts.onlinePayments) throw badRequest("online_payment_off", "Online payment isn't available yet. Choose Pay after service.");
     const current = await this.currentPayment(b);
     if (current) return { booking: await this.load(b.id, "customer"), payment: current };
     const [prior] = await this.db

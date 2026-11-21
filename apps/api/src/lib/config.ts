@@ -18,6 +18,12 @@ const envSchema = z.object({
    */
   GOOGLE_CLIENT_ID: z.string().default(""),
   PAYMENT_PROVIDER: z.enum(["mock", "razorpay"]).default("mock"),
+  RAZORPAY_KEY_ID: z.string().optional(),
+  /**
+   * On a live server, "Pay online" is switched off while Razorpay has test keys (rzp_test_...),
+   * because customers would see "Paid" while no money moves. Set to true only on a private test site.
+   */
+  ALLOW_TEST_PAYMENTS: z.enum(["true", "false"]).default("false"),
   /** Home services is the launch vertical, so it is on unless you override this. */
   ENABLED_MODULES: z.string().default("home"),
   CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:8081"),
@@ -39,6 +45,10 @@ const envSchema = z.object({
   /** "manual": admin pays by UPI and records the reference. "razorpayx": automatic, after Razorpay KYC. */
   PAYOUT_PROVIDER: z.enum(["manual", "razorpayx"]).default("manual"),
   /** Encrypts KYC documents in the database. 32+ random characters; never change it once set. */
+  /** Sign-in codes one internet address may request per hour (SMS + email). */
+  CODE_LIMIT_PER_IP_PER_HOUR: z.coerce.number().int().positive().default(20),
+  /** SMS sign-in codes the whole platform may send per hour: a ceiling on the SMS bill. Raise it as you grow. */
+  SMS_CODE_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(500),
   KYC_ENCRYPTION_KEY: z.string().min(32, "KYC_ENCRYPTION_KEY must be at least 32 characters").optional(),
 });
 export type Config = z.infer<typeof envSchema> & {
@@ -49,6 +59,8 @@ export type Config = z.infer<typeof envSchema> & {
    * there even if NODE_ENV was forgotten.
    */
   devShortcuts: boolean;
+  /** Whether customers may choose "Pay online". Off on a live server with Razorpay test keys. */
+  onlinePayments: boolean;
 };
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -81,7 +93,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   for (const old of ["ADMIN_PHONES", "ADMIN_TOTP_SECRETS"]) {
     if (cleaned[old]) console.warn(`${old} is no longer used. Create admin logins with: pnpm admin:create <username> "<Full name>"`);
   }
-  return { ...base, devShortcuts };
+  const testKeys = base.PAYMENT_PROVIDER === "razorpay" && (base.RAZORPAY_KEY_ID ?? "").startsWith("rzp_test_");
+  const onlinePayments = !(testKeys && base.NODE_ENV === "production" && base.ALLOW_TEST_PAYMENTS !== "true");
+  return { ...base, devShortcuts, onlinePayments };
 }
 
 /** Local demo admin, created on a developer's machine only (see server.ts). */

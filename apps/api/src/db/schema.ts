@@ -57,7 +57,7 @@ export const otpChallenges = pgTable(
     ip: text("ip"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("otp_phone_created_idx").on(t.phone, t.createdAt), index("otp_email_created_idx").on(t.email, t.createdAt)],
+  (t) => [index("otp_phone_created_idx").on(t.phone, t.createdAt), index("otp_email_created_idx").on(t.email, t.createdAt), index("otp_ip_created_idx").on(t.ip, t.createdAt), index("otp_created_idx").on(t.createdAt)],
 );
 
 /** One row per logged-in device. The refresh token is stored only as a SHA-256 hash. */

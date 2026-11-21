@@ -108,6 +108,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     email: deps.emailSender ?? new ConsoleEmailSender(),
     google,
     now: deps.now,
+    limits: { perIpPerHour: deps.config.CODE_LIMIT_PER_IP_PER_HOUR, smsPerHour: deps.config.SMS_CODE_LIMIT_PER_HOUR },
   });
   app.decorate("db", deps.db);
   app.decorate("config", deps.config);

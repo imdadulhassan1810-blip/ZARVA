@@ -21,18 +21,25 @@ export function sha256(s: string): string {
   return createHash("sha256").update(s).digest("hex");
 }
 
-export async function signAccessToken(secret: string, userId: string, sessionId: string): Promise<string> {
-  return new SignJWT({ sid: sessionId })
+/** Which app a token opens. Customer and partner tokens belong to users; admin tokens to admin_accounts. */
+export type Portal = "customer" | "partner" | "admin";
+const portals: readonly string[] = ["customer", "partner", "admin"];
+
+export async function signAccessToken(secret: string, subjectId: string, sessionId: string, portal: Portal = "customer"): Promise<string> {
+  return new SignJWT({ sid: sessionId, por: portal })
     .setProtectedHeader({ alg: "HS256" })
-    .setSubject(userId)
+    .setSubject(subjectId)
     .setIssuer("zarva")
     .setIssuedAt()
     .setExpirationTime(`${ACCESS_TTL_SECONDS}s`)
     .sign(new TextEncoder().encode(secret));
 }
 
-export async function verifyAccessToken(secret: string, token: string): Promise<{ userId: string; sessionId: string }> {
+export async function verifyAccessToken(secret: string, token: string): Promise<{ subjectId: string; sessionId: string; portal: Portal }> {
   const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), { issuer: "zarva", algorithms: ["HS256"] });
   if (!payload.sub || typeof payload.sid !== "string") throw new Error("bad token");
-  return { userId: payload.sub, sessionId: payload.sid };
+  // Tokens from before portals existed were customer tokens.
+  const portal = payload.por === undefined ? "customer" : payload.por;
+  if (typeof portal !== "string" || !portals.includes(portal)) throw new Error("bad token");
+  return { subjectId: payload.sub, sessionId: payload.sid, portal: portal as Portal };
 }

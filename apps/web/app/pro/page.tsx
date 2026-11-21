@@ -5,7 +5,8 @@ import { formatPhone, formatRupees, type HomeBooking, type HomeCategory, type Ho
 import { StatusChip, itemsLine, when } from "../../components/BookingBits";
 import { BalanceCard, LedgerList, PayoutChip } from "../../components/Ledger";
 import { Payout, ProOnboarding } from "../../components/ProOnboarding";
-import { api, isSignedIn } from "../../lib/api";
+import { isSignedIn, partnerApi as api } from "../../lib/api";
+import { areaLogin, loginUrl, signOut } from "../../lib/roles";
 
 /** Service professional's screen. Built mobile-first: pros use it on their phone between jobs. */
 export default function Pro() {
@@ -16,17 +17,17 @@ export default function Pro() {
   const [codes, setCodes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"jobs" | "earnings">("jobs");
+  const [tab, setTab] = useState<"jobs" | "earnings" | "profile">("jobs");
 
   const loadJobs = useCallback(async () => setJobs(await api.home.proJobs()), []);
 
   useEffect(() => {
-    if (!isSignedIn()) return router.replace("/login?next=/pro");
+    if (!isSignedIn("partner")) return router.replace(loginUrl("partner"));
     api.home.catalog("durgapur").then((r) => setCats(r.categories)).catch(() => {});
     api.home.proMe().then((r) => {
       setPro(r.pro);
       if (r.pro?.status === "active") void loadJobs().catch((e: Error) => setError(e.message));
-    }).catch(() => router.replace("/login?next=/pro"));
+    }).catch(() => router.replace(loginUrl("partner")));
   }, [loadJobs, router]);
 
   useEffect(() => {
@@ -34,6 +35,11 @@ export default function Pro() {
     const t = setInterval(() => void loadJobs().catch(() => {}), 30_000);
     return () => clearInterval(t);
   }, [pro, loadJobs]);
+
+  async function out() {
+    await signOut("partner");
+    router.replace(areaLogin.partner);
+  }
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -43,13 +49,19 @@ export default function Pro() {
 
   if (pro === undefined) return <p className="muted">Loading…</p>;
   if (pro === null || pro.status === "draft" || pro.status === "rejected" || pro.status === "pending") {
-    return <ProOnboarding pro={pro} cats={cats} onChange={setPro} />;
+    return (
+      <>
+        <ProOnboarding pro={pro} cats={cats} onChange={setPro} />
+        <p style={{ textAlign: "center", marginTop: 24 }}><button className="link-btn" onClick={() => void out()}>Sign out</button></p>
+      </>
+    );
   }
   if (pro.status === "suspended") {
     return (
       <div style={{ maxWidth: 560, margin: "0 auto" }}>
         <h1>Hi {pro.name}</h1>
         <div className="card">Your profile is suspended. Please call ZARVA partner support.</div>
+        <p><button className="link-btn" onClick={() => void out()}>Sign out</button></p>
       </div>
     );
   }
@@ -74,15 +86,19 @@ export default function Pro() {
   };
 
   return (
-    <div style={{ maxWidth: 680, margin: "0 auto 64px" }}>
-      <h1>Partner</h1>
-      <p className="muted" style={{ marginTop: 0 }}>{pro.name} · {pro.locality ?? "Durgapur"} · {pro.jobsDone} jobs done</p>
-      <div className="segmented" role="tablist" style={{ marginBottom: 8 }}>
-        <button role="tab" aria-selected={tab === "jobs"} className={tab === "jobs" ? "on" : ""} onClick={() => setTab("jobs")}>Jobs</button>
-        <button role="tab" aria-selected={tab === "earnings"} className={tab === "earnings" ? "on" : ""} onClick={() => setTab("earnings")}>Earnings</button>
-      </div>
+    <div className="partner-app" style={{ maxWidth: 680, margin: "0 auto" }}>
+      <h1 style={{ marginBottom: 4 }}>{tab === "jobs" ? `Hi ${pro.name.split(" ")[0]}` : tab === "earnings" ? "Earnings" : "Profile"}</h1>
+      {tab === "jobs" && <p className="muted" style={{ marginTop: 0 }}>{pro.locality ?? "Durgapur"} · {pro.jobsDone} jobs done</p>}
+      {/* The partner app's own menu: nothing from the customer app here. */}
+      <nav className="tabbar" role="tablist" aria-label="Partner menu">
+        {(["jobs", "earnings", "profile"] as const).map((t) => (
+          <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
+            <span aria-hidden>{t === "jobs" ? "🧰" : t === "earnings" ? "₹" : "👤"}</span>{t === "jobs" ? "Jobs" : t === "earnings" ? "Earnings" : "Profile"}
+          </button>
+        ))}
+      </nav>
       {error && <p className="error" role="alert">{error}</p>}
-      {tab === "earnings" ? <Earnings pro={pro} onPro={setPro} /> : <>
+      {tab === "earnings" ? <Earnings /> : tab === "profile" ? <Profile pro={pro} cats={cats} onPro={setPro} onSignOut={out} /> : <>
 
       <h2>Your jobs</h2>
       <div className="stack">
@@ -124,9 +140,8 @@ export default function Pro() {
   );
 }
 
-function Earnings({ pro, onPro }: { pro: HomePro; onPro: (p: HomePro) => void }) {
+function Earnings() {
   const [e, setE] = useState<HomeEarnings | null>(null);
-  const [editPayout, setEditPayout] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { api.home.proEarnings().then(setE).catch((x: Error) => setError(x.message)); }, []);
   if (error) return <p className="error">{error}</p>;
@@ -137,11 +152,6 @@ function Earnings({ pro, onPro }: { pro: HomePro; onPro: (p: HomePro) => void })
       {e.balancePaise < 0 && <p className="muted" style={{ margin: 0 }}>This is commission on jobs where you collected cash. It is taken from your next online-paid jobs, or you can pay it to ZARVA by UPI.</p>}
       <h2 style={{ marginBottom: 0 }}>Payouts</h2>
       <div className="card stack">
-        <div className="sum-row">
-          <span>Paid to <strong>{pro.payout.upi ?? pro.payout.bankAccountMasked ?? "not set"}</strong></span>
-          <button className="btn btn-ghost" onClick={() => setEditPayout(!editPayout)}>{editPayout ? "Close" : "Change"}</button>
-        </div>
-        {editPayout && <Payout pro={pro} submitLabel="Save payout account" onSaved={(p) => { onPro(p); setEditPayout(false); }} />}
         {e.payouts.length === 0 && <span className="muted">No payouts yet. ZARVA pays your balance every week.</span>}
         {e.payouts.map((p) => (
           <div key={p.id} className="sum-row">
@@ -152,6 +162,33 @@ function Earnings({ pro, onPro }: { pro: HomePro; onPro: (p: HomePro) => void })
       </div>
       <h2 style={{ marginBottom: 0 }}>History</h2>
       <LedgerList entries={e.entries} />
+    </div>
+  );
+}
+
+/** The partner's own details: work, area, where the money goes. Separate from any customer profile. */
+function Profile({ pro, cats, onPro, onSignOut }: { pro: HomePro; cats: HomeCategory[]; onPro: (p: HomePro) => void; onSignOut: () => void }) {
+  const [editPayout, setEditPayout] = useState(false);
+  const work = pro.categoryIds.map((id) => cats.find((c) => c.id === id)?.name).filter(Boolean).join(", ");
+  return (
+    <div className="stack">
+      <div className="card stack">
+        <div className="sum-row"><span className="muted">Name</span><strong>{pro.name}</strong></div>
+        {pro.phone && <div className="sum-row"><span className="muted">Mobile</span><span>{formatPhone(pro.phone)}</span></div>}
+        <div className="sum-row"><span className="muted">Work</span><span>{work || "-"}</span></div>
+        <div className="sum-row"><span className="muted">Area</span><span>{pro.locality ?? "Durgapur"}</span></div>
+        <div className="sum-row"><span className="muted">Jobs done</span><span>{pro.jobsDone}</span></div>
+      </div>
+      <h2 style={{ marginBottom: 0 }}>Payout account</h2>
+      <div className="card stack">
+        <div className="sum-row">
+          <span>Paid to <strong>{pro.payout.upi ?? pro.payout.bankAccountMasked ?? "not set"}</strong></span>
+          <button className="btn btn-ghost" onClick={() => setEditPayout(!editPayout)}>{editPayout ? "Close" : "Change"}</button>
+        </div>
+        {editPayout && <Payout pro={pro} submitLabel="Save payout account" onSaved={(p) => { onPro(p); setEditPayout(false); }} />}
+      </div>
+      <p className="muted" style={{ margin: 0 }}>To change your work or area, call ZARVA partner support.</p>
+      <button className="btn btn-ghost" onClick={onSignOut}>Sign out</button>
     </div>
   );
 }

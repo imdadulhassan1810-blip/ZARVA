@@ -1,0 +1,9 @@
+{
+  "cli": { "appVersionSource": "remote" },
+  "build": {
+    "customer": { "env": { "APP_VARIANT": "customer" }, "autoIncrement": true },
+    "partner": { "env": { "APP_VARIANT": "partner" }, "autoIncrement": true },
+    "customer-preview": { "env": { "APP_VARIANT": "customer" }, "distribution": "internal", "android": { "buildType": "apk" } },
+    "partner-preview": { "env": { "APP_VARIANT": "partner" }, "distribution": "internal", "android": { "buildType": "apk" } }
+  }
+}

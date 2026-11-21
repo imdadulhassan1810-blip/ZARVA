@@ -17,6 +17,7 @@ import { authRoutes } from "./routes/auth";
 import { meRoutes } from "./routes/me";
 import { paymentRoutes } from "./routes/payments";
 import { registerAdminGuard } from "./admin/guard";
+import { AdminAccountService } from "./admin/accounts";
 import { channelsFromConfig, NotificationService, type MessageChannel, type NotifyChannel } from "./notify";
 import { Vault } from "./lib/vault";
 
@@ -33,15 +34,21 @@ declare module "fastify" {
       payouts: PayoutProvider;
       /** Encrypts KYC documents at rest. */
       vault: Vault;
+      /** ZARVA team accounts (admin app). */
+      admins: AdminAccountService;
     };
-    requireAuth: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
-    /** Signed in + verified phone in ADMIN_PHONES + authenticator code (see admin/guard.ts). */
+    /** A session opened in the customer app. Sets req.userId. */
+    requireCustomer: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    /** A session opened in the partner app. Sets req.userId. */
+    requirePartner: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    /** A ZARVA team session (username + password + authenticator). Sets req.adminId. See admin/guard.ts. */
     requireAdmin: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
     /** Current time. Injected so tests can move the clock. */
     now: () => Date;
   }
   interface FastifyRequest {
     userId?: string;
+    adminId?: string;
     sessionId?: string;
     rawBody?: string;
   }
@@ -104,23 +111,34 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const notify = new NotificationService(deps.db, deps.notifyChannels ?? channelsFromConfig(deps.config), now);
   // Dev falls back to a key derived from JWT_SECRET; real deployments must set KYC_ENCRYPTION_KEY (config enforces it).
   const vault = new Vault(deps.config.KYC_ENCRYPTION_KEY ?? `dev:${deps.config.JWT_SECRET}`);
+  const admins = new AdminAccountService(deps.db, vault, deps.config.JWT_SECRET, deps.config.devShortcuts, now);
   app.decorate("services", {
-    auth, payments: new PaymentService(deps.db, deps.paymentProvider), notify, payouts: deps.payoutProvider ?? new ManualPayoutProvider(), vault,
+    auth, payments: new PaymentService(deps.db, deps.paymentProvider), notify, payouts: deps.payoutProvider ?? new ManualPayoutProvider(), vault, admins,
   });
   app.addHook("onClose", async () => notify.stop());
-  app.decorate("requireAuth", async (req: FastifyRequest) => {
+  // One person can use the customer app and the partner app (like an Uber rider who also drives),
+  // but each sign-in opens only the app it was made in. The API refuses the other app's screens.
+  const wrongPortal = {
+    customer: "This is the customer app. Sign in on the customer page to use it.",
+    partner: "This is the partner app. Sign in on the partner page to use it.",
+  } as const;
+  const userGuard = (portal: "customer" | "partner") => async (req: FastifyRequest) => {
     const h = req.headers.authorization;
     if (!h?.startsWith("Bearer ")) throw unauthorized();
+    let claims;
     try {
-      const { userId, sessionId } = await verifyAccessToken(deps.config.JWT_SECRET, h.slice(7));
-      req.userId = userId;
-      req.sessionId = sessionId;
+      claims = await verifyAccessToken(deps.config.JWT_SECRET, h.slice(7));
     } catch {
       throw unauthorized("Session expired");
     }
+    if (claims.portal !== portal) throw new AppError(403, "wrong_portal", wrongPortal[portal]);
+    req.userId = claims.subjectId;
+    req.sessionId = claims.sessionId;
     // A logged-out device loses access immediately, not after the access token expires.
-    if (!(await auth.isSessionActive(req.sessionId!))) throw unauthorized("Session ended");
-  });
+    if (!(await auth.isSessionActive(claims.sessionId, portal))) throw unauthorized("Session ended");
+  };
+  app.decorate("requireCustomer", userGuard("customer"));
+  app.decorate("requirePartner", userGuard("partner"));
 
   app.setErrorHandler((err: Error & { statusCode?: number; code?: string; details?: unknown }, req, reply) => {
     if (err instanceof InvalidSignatureError) {

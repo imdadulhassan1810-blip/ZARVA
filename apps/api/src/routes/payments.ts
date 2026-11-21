@@ -26,7 +26,7 @@ export async function paymentRoutes(app: FastifyInstance) {
   });
 
   app.register(async (authed) => {
-    authed.addHook("preHandler", app.requireAuth);
+    authed.addHook("preHandler", app.requireCustomer);
     authed.post("/v1/payments/confirm", async (req) => {
       const c = parse(confirmSchema, req.body);
       return { payment: publicPayment(await app.services.payments.confirmFromClient(req.userId!, c)) };

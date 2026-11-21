@@ -10,6 +10,12 @@ const timestamps = {
 
 export const languageEnum = pgEnum("language", ["en", "hi", "bn"]);
 export const userStatusEnum = pgEnum("user_status", ["active", "blocked", "deleted"]);
+/**
+ * Which app a session was opened in. One person (one users row) can be a customer and a partner,
+ * like an Uber rider who also drives, but each sign-in only opens the app it was made in.
+ */
+export const sessionPortalEnum = pgEnum("session_portal", ["customer", "partner"]);
+export const adminStatusEnum = pgEnum("admin_status", ["active", "disabled"]);
 export const addressLabelEnum = pgEnum("address_label", ["home", "work", "other"]);
 export const paymentStatusEnum = pgEnum("payment_status", [
   "created", "authorized", "captured", "failed", "refunded", "partially_refunded",
@@ -61,6 +67,7 @@ export const sessions = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     tokenHash: text("token_hash").notNull().unique(),
+    portal: sessionPortalEnum("portal").notNull().default("customer"),
     deviceName: text("device_name"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
@@ -179,15 +186,39 @@ export const notifications = pgTable(
 export * from "../modules/home/schema";
 
 /**
- * Admin second factor. A session must be unlocked with an authenticator code before admin APIs
- * answer. Rows die with the session (logout, refresh-token reuse) and expire after a few hours.
+ * ZARVA team accounts. Separate from customers and partners on purpose: issued by ZARVA (an
+ * existing admin or `pnpm admin:create`), never self sign-up, never a personal phone OTP.
+ * Sign-in = username + password + 6-digit authenticator code.
  */
-export const adminUnlocks = pgTable("admin_unlocks", {
-  sessionId: uuid("session_id").primaryKey().references(() => sessions.id, { onDelete: "cascade" }),
-  unlockedUntil: timestamp("unlocked_until", { withTimezone: true }),
+export const adminAccounts = pgTable("admin_accounts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** Lower-case, 3-32 of a-z 0-9 . _ - */
+  username: text("username").notNull().unique(),
+  name: text("name").notNull(),
+  /** scrypt, see admin/passwords.ts */
+  passwordHash: text("password_hash").notNull(),
+  /** Authenticator secret, encrypted with the vault key. Null only for the local demo admin. */
+  totpSecretEnc: text("totp_secret_enc"),
+  /** Last accepted time step: the same 6-digit code can't be used twice. */
+  lastTotpStep: integer("last_totp_step"),
+  status: adminStatusEnum("status").notNull().default("active"),
   failedAttempts: integer("failed_attempts").notNull().default(0),
   lockedUntil: timestamp("locked_until", { withTimezone: true }),
-  /** Last accepted TOTP time step: the same code can't be used twice. */
-  lastStep: integer("last_step"),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  createdBy: uuid("created_by"),
+  ...timestamps,
 });
+
+/** Admin sign-ins. Shorter-lived than customer sessions (12 hours), and revoked when an admin is disabled. */
+export const adminSessions = pgTable(
+  "admin_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    adminId: uuid("admin_id").notNull().references(() => adminAccounts.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("admin_sessions_admin_idx").on(t.adminId)],
+);

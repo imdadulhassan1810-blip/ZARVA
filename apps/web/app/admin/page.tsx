@@ -7,12 +7,14 @@ import {
   type HomeProBalance, type HomeProDocKind, type HomeService,
 } from "@zarva/core";
 import { StatusChip, itemsLine, when } from "../../components/BookingBits";
+import { AdminTeam } from "../../components/AdminTeam";
 import { Amount, BalanceCard, LedgerList, PayoutChip } from "../../components/Ledger";
-import { api, isSignedIn } from "../../lib/api";
+import { adminApi as api, isSignedIn } from "../../lib/api";
+import { loginUrl, signOut } from "../../lib/roles";
 
-type Tab = "bookings" | "pros" | "payouts" | "prices";
+type Tab = "bookings" | "pros" | "payouts" | "prices" | "team";
 
-/** Minimal operations console. Access: phone numbers in the API's ADMIN_PHONES setting. */
+/** Operations console for the ZARVA team. Access: a ZARVA-issued admin login (see /admin/login). */
 export default function Admin() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("bookings");
@@ -41,56 +43,26 @@ export default function Admin() {
   }, [status]);
 
   useEffect(() => {
-    if (!isSignedIn()) return router.replace("/login?next=/admin");
+    if (!isSignedIn("admin")) return router.replace(loginUrl("admin"));
     api.home.catalog("durgapur").then((r) => setCats(r.categories)).catch(() => {});
   }, [router]);
 
-  const [gate, setGate] = useState<"checking" | "code" | "open">("checking");
-  const [code, setCode] = useState("");
-
   useEffect(() => {
-    if (!isSignedIn()) return;
-    api.adminStatus().then((s) => {
-      if (!s.admin) setAllowed(false);
-      else setGate(s.unlocked ? "open" : "code");
-    }).catch((e: Error) => setError(e.message));
-  }, []);
-
-  useEffect(() => {
-    if (gate !== "open") return;
-    load().then(() => setAllowed(true)).catch((e: Error & { status?: number; code?: string }) => {
-      if (e.code === "admin_code_required") setGate("code");
-      else if (e.status === 403) setAllowed(false);
-      else setError(e.message);
+    if (!isSignedIn("admin")) return;
+    load().then(() => setAllowed(true)).catch(async (e: Error & { status?: number }) => {
+      // Session ended (12 hours, disabled, signed out elsewhere): back to the admin sign-in.
+      if (e.status === 401 || e.status === 403) {
+        await signOut("admin");
+        router.replace(loginUrl("admin"));
+      } else setError(e.message);
     });
-  }, [load, gate]);
+  }, [load, router]);
 
   async function run(fn: () => Promise<unknown>) {
     setError(null);
     try { await fn(); await load(); } catch (e) { setError((e as Error).message); }
   }
 
-  if (allowed !== false && gate === "code") {
-    return (
-      <form className="card stack" style={{ maxWidth: 420, margin: "32px auto" }} onSubmit={async (e) => {
-        e.preventDefault();
-        setError(null);
-        try {
-          await api.adminUnlock(code);
-          setCode("");
-          setGate("open");
-        } catch (err) { setError((err as Error).message); }
-      }}>
-        <h1 style={{ margin: 0 }}>Admin check</h1>
-        <p className="muted" style={{ margin: 0 }}>Open your authenticator app and enter the 6-digit code for ZARVA Admin. You stay unlocked on this device for 8 hours.</p>
-        <input className="otp-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} aria-label="Authenticator code" autoFocus />
-        {error && <p className="error" role="alert">{error}</p>}
-        <button className="btn" disabled={code.length !== 6}>Unlock admin</button>
-      </form>
-    );
-  }
-  if (allowed === false) return <div className="card" style={{ marginTop: 24 }}>This account does not have admin access.</div>;
   if (allowed === null) return <p className="muted">{error ?? "Loading…"}</p>;
 
   const catName = (id: string) => cats.find((c) => c.id === id)?.name ?? "";
@@ -100,11 +72,11 @@ export default function Admin() {
     <div style={{ marginBottom: 64 }}>
       <h1>Home services admin</h1>
       <div className="day-row" role="tablist">
-        {(["bookings", "pros", "payouts", "prices"] as Tab[]).map((t) => (
+        {(["bookings", "pros", "payouts", "prices", "team"] as Tab[]).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={`day ${tab === t ? "day-on" : ""}`} onClick={() => setTab(t)}>
             {t === "bookings" ? "Bookings"
               : t === "pros" ? `Professionals${pros.some((p) => p.status === "pending") ? ` (${pros.filter((p) => p.status === "pending").length} to review)` : ""}`
-              : t === "payouts" ? `Payouts${balances.payouts.some((p) => p.status === "manual") ? " •" : ""}` : "Prices & commission"}
+              : t === "payouts" ? `Payouts${balances.payouts.some((p) => p.status === "manual") ? " •" : ""}` : t === "prices" ? "Prices & commission" : "Team"}
           </button>
         ))}
       </div>
@@ -157,6 +129,8 @@ export default function Admin() {
       )}
 
       {tab === "payouts" && <Payouts data={balances} run={run} />}
+
+      {tab === "team" && <AdminTeam />}
 
       {tab === "prices" && (
         <div className="stack" style={{ marginTop: 12 }}>

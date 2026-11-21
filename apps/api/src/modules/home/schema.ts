@@ -81,7 +81,8 @@ export const homePros = pgTable(
     rejectionReason: text("rejection_reason"),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
-    reviewedBy: uuid("reviewed_by").references(() => users.id),
+    /** admin_accounts.id of the reviewer. */
+    reviewedBy: uuid("reviewed_by"),
     // Where ZARVA sends this pro's money. UPI preferred; bank account as fallback.
     payoutAccountName: text("payout_account_name"),
     payoutUpi: text("payout_upi"),
@@ -197,7 +198,8 @@ export const homeProLedger = pgTable(
     grossPaise: integer("gross_paise"),
     commissionPaise: integer("commission_paise"),
     note: text("note"),
-    createdBy: uuid("created_by").references(() => users.id),
+    /** admin_accounts.id for manual adjustments; null for automatic rows. */
+    createdBy: uuid("created_by"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -222,7 +224,8 @@ export const homePayouts = pgTable(
     utr: text("utr"),
     failureReason: text("failure_reason"),
     note: text("note"),
-    createdBy: uuid("created_by").notNull().references(() => users.id),
+    /** admin_accounts.id (or the earliest rows: the user id of a phone admin). */
+    createdBy: uuid("created_by").notNull(),
     ...timestamps,
     paidAt: timestamp("paid_at", { withTimezone: true }),
   },

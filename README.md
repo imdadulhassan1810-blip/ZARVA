@@ -76,6 +76,8 @@ Stop with `Ctrl + C`. Your demo data stays until you delete `apps/api/.data`.
 4. Scan the QR code: on Android with the Expo Go app, on iPhone with the Camera app.
 5. If Windows asks whether Node.js may use the network, allow it on **private networks**, or the phone can't reach the API.
 
+Expo Go first asks which app to open: **ZARVA** (customers) or **ZARVA Partner** (professionals). In the stores they are two separate apps built from this one codebase: `eas build --profile customer` and `eas build --profile partner` (see `apps/mobile/eas.json`).
+
 The phone finds the API on your computer automatically. If it can't (some office or hostel Wi-Fi blocks devices from seeing each other), run `pnpm dev:mobile -- --tunnel` instead, and set `extra.apiUrl` in `apps/mobile/app.json` to an address the phone can reach.
 
 ### Using real PostgreSQL instead (optional)

@@ -3,14 +3,14 @@ import { gradient } from "@zarva/brand";
 
 export const metadata = { title: "Become a ZARVA partner · Durgapur" };
 
-/** Public page that recruits professionals. The sign-up itself is at /pro (needs sign-in). */
+/** Public page that recruits professionals. Sign-in is /partner/login; the KYC steps are at /pro. */
 export default function Partner() {
   return (
     <div style={{ maxWidth: 760, margin: "0 auto 64px" }}>
       <section className="partner-hero" style={{ background: gradient("home") }}>
         <h1>Earn with ZARVA in Durgapur</h1>
         <p>Electricians, plumbers, AC technicians, carpenters, cleaners and beauticians: get jobs near your home on your phone, at fixed prices.</p>
-        <div><Link className="btn" href="/pro">Start sign-up</Link></div>
+        <div className="row"><Link className="btn" href="/pro">Start sign-up</Link><Link className="btn btn-ghost partner-signin" href="/partner/login">Sign in</Link></div>
       </section>
 
       <h2>Why join</h2>

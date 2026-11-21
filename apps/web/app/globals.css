@@ -171,3 +171,24 @@ input:focus-visible, select:focus-visible, .btn:focus-visible { outline: 2px sol
   .wizard li { font-size: 0; }
   .partner-hero h1 { font-size: 24px; }
 }
+
+/* Area header (customer / partner / admin) and sign-in page switch links */
+.brand { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+.area-tag { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; color: #fff; }
+.area-partner { background: linear-gradient(135deg, var(--z-home-from), var(--z-home-to)); color: #2a1a00; }
+/* Partner app: its own bottom menu on phones (Jobs, Earnings, Profile), a tab row on wider screens. */
+.partner-app { padding-bottom: 96px; }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; background: var(--z-surface); border-top: 1px solid var(--z-border); padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); }
+.tabbar button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; border: 0; background: transparent; color: var(--z-muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 10px; }
+.tabbar button span { font-size: 20px; line-height: 1; }
+.tabbar button.on { color: var(--z-text); background: var(--z-bg); }
+@media (min-width: 720px) {
+  .tabbar { position: static; border: 1px solid var(--z-border); border-radius: var(--z-radius-md); margin: 12px 0; padding: 4px; }
+  .partner-app { padding-bottom: 32px; }
+}
+.link-btn { background: none; border: 0; padding: 0; color: var(--z-muted); text-decoration: underline; font: inherit; cursor: pointer; }
+.ok-msg { color: #1b7f4b; margin: 0; }
+.created-login { border-color: #f0b000; }
+.area-admin { background: #0f0b24; }
+.signin-switch { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--z-border); font-size: 14px; color: var(--z-muted); }
+.signin-switch a { font-weight: 600; }

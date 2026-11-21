@@ -26,6 +26,10 @@ export default function HomeServices() {
       .then((r) => {
         setCategories(r.categories);
         setServices(r.services);
+        // Links from the landing page open a category directly: /home-services?cat=electrician
+        const slug = new URLSearchParams(window.location.search).get("cat");
+        const fromLink = slug ? r.categories.find((x) => x.slug === slug) : undefined;
+        if (fromLink) setActive(fromLink.id);
       })
       .catch((e: Error) => setError(e.message));
   }, []);

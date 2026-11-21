@@ -6,6 +6,7 @@ import { StatusChip, itemsLine, when } from "../../components/BookingBits";
 import { BalanceCard, LedgerList, PayoutChip } from "../../components/Ledger";
 import { Payout, ProOnboarding } from "../../components/ProOnboarding";
 import { api, isSignedIn } from "../../lib/api";
+import { loginUrl, setProRole } from "../../lib/roles";
 
 /** Service professional's screen. Built mobile-first: pros use it on their phone between jobs. */
 export default function Pro() {
@@ -21,12 +22,13 @@ export default function Pro() {
   const loadJobs = useCallback(async () => setJobs(await api.home.proJobs()), []);
 
   useEffect(() => {
-    if (!isSignedIn()) return router.replace("/login?next=/pro");
+    if (!isSignedIn()) return router.replace(loginUrl("partner"));
     api.home.catalog("durgapur").then((r) => setCats(r.categories)).catch(() => {});
     api.home.proMe().then((r) => {
       setPro(r.pro);
+      setProRole(r.pro?.status ?? null);
       if (r.pro?.status === "active") void loadJobs().catch((e: Error) => setError(e.message));
-    }).catch(() => router.replace("/login?next=/pro"));
+    }).catch(() => router.replace(loginUrl("partner")));
   }, [loadJobs, router]);
 
   useEffect(() => {
@@ -43,7 +45,7 @@ export default function Pro() {
 
   if (pro === undefined) return <p className="muted">Loading…</p>;
   if (pro === null || pro.status === "draft" || pro.status === "rejected" || pro.status === "pending") {
-    return <ProOnboarding pro={pro} cats={cats} onChange={setPro} />;
+    return <ProOnboarding pro={pro} cats={cats} onChange={(p) => { setPro(p); setProRole(p?.status ?? null); }} />;
   }
   if (pro.status === "suspended") {
     return (

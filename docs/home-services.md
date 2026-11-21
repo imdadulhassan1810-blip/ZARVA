@@ -6,12 +6,16 @@ Urban Company style bookings. Live in **Durgapur** (PIN 713201 to 713216). Asans
 
 Nothing extra to set up. Run `pnpm dev` as in the README. On first start the API loads the Durgapur catalogue and, in the built-in demo database only, 8 demo professionals. Sign-in codes print in the terminal.
 
-| Role | Sign in as | Go to |
-|---|---|---|
-| Customer | any number, e.g. 98765 43210 | Home tile "Home services" → add to cart → checkout |
-| Professional | 90000 00001 to 90000 00008 (see `seed-data.ts` for who does what) | http://localhost:3000/pro |
-| New partner signing up | any new number, e.g. 90000 00099 | http://localhost:3000/partner → Start sign-up |
-| Admin | 99999 00000 (local default, no authenticator code needed locally) | http://localhost:3000/admin |
+Everyone has one ZARVA account (a mobile number, plus email or Google for customers). The website has three doors into it, and each one lands you in that role's own home:
+
+| Role | Sign in at | Sign in as | You land on |
+|---|---|---|---|
+| Customer | http://localhost:3000/login | any number, e.g. 98765 43210 | Home page (new accounts first add a name and phone) |
+| Professional | http://localhost:3000/partner/login | 90000 00001 to 90000 00008 (see `seed-data.ts` for who does what) | /pro, the partner app: jobs and earnings |
+| New partner signing up | http://localhost:3000/partner → Start sign-up | any new number, e.g. 90000 00099 | /pro, the 4 sign-up steps |
+| Admin | http://localhost:3000/admin/login | 99999 00000 (local default, no authenticator code needed locally) | /admin |
+
+The same person can hold several roles (a pro can also book a service); the header then shows links to their other areas. A number that is not an admin is signed straight out of /admin/login. The roles are checked by the API on every request, so the separate pages are about where people land, not about security.
 
 Payments use the mock provider locally: "Pay now" succeeds instantly. To reload the catalogue after editing prices in `seed-data.ts`, run `pnpm db:seed` (add `-- --demo` for demo pros). To start over, stop the API and delete `apps/api/.data`.
 

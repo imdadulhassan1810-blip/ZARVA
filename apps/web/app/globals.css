@@ -171,3 +171,11 @@ input:focus-visible, select:focus-visible, .btn:focus-visible { outline: 2px sol
   .wizard li { font-size: 0; }
   .partner-hero h1 { font-size: 24px; }
 }
+
+/* Area header (customer / partner / admin) and sign-in page switch links */
+.brand { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+.area-tag { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; color: #fff; }
+.area-partner { background: linear-gradient(135deg, var(--z-home-from), var(--z-home-to)); color: #2a1a00; }
+.area-admin { background: #0f0b24; }
+.signin-switch { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--z-border); font-size: 14px; color: var(--z-muted); }
+.signin-switch a { font-weight: 600; }

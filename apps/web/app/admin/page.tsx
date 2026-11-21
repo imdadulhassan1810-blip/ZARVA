@@ -7,8 +7,10 @@ import {
   type HomeProBalance, type HomeProDocKind, type HomeService,
 } from "@zarva/core";
 import { StatusChip, itemsLine, when } from "../../components/BookingBits";
+import { AdminCodeForm } from "../../components/AdminCodeForm";
 import { Amount, BalanceCard, LedgerList, PayoutChip } from "../../components/Ledger";
 import { api, isSignedIn } from "../../lib/api";
+import { loginUrl, signOut } from "../../lib/roles";
 
 type Tab = "bookings" | "pros" | "payouts" | "prices";
 
@@ -41,12 +43,11 @@ export default function Admin() {
   }, [status]);
 
   useEffect(() => {
-    if (!isSignedIn()) return router.replace("/login?next=/admin");
+    if (!isSignedIn()) return router.replace(loginUrl("admin"));
     api.home.catalog("durgapur").then((r) => setCats(r.categories)).catch(() => {});
   }, [router]);
 
   const [gate, setGate] = useState<"checking" | "code" | "open">("checking");
-  const [code, setCode] = useState("");
 
   useEffect(() => {
     if (!isSignedIn()) return;
@@ -70,27 +71,16 @@ export default function Admin() {
     try { await fn(); await load(); } catch (e) { setError((e as Error).message); }
   }
 
-  if (allowed !== false && gate === "code") {
+  if (allowed !== false && gate === "code") return <AdminCodeForm onUnlocked={() => setGate("open")} />;
+  if (allowed === false) {
     return (
-      <form className="card stack" style={{ maxWidth: 420, margin: "32px auto" }} onSubmit={async (e) => {
-        e.preventDefault();
-        setError(null);
-        try {
-          await api.adminUnlock(code);
-          setCode("");
-          setGate("open");
-        } catch (err) { setError((err as Error).message); }
-      }}>
-        <h1 style={{ margin: 0 }}>Admin check</h1>
-        <p className="muted" style={{ margin: 0 }}>Open your authenticator app and enter the 6-digit code for ZARVA Admin. You stay unlocked on this device for 8 hours.</p>
-        <input className="otp-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} aria-label="Authenticator code" autoFocus />
-        {error && <p className="error" role="alert">{error}</p>}
-        <button className="btn" disabled={code.length !== 6}>Unlock admin</button>
-      </form>
+      <div className="card stack" style={{ maxWidth: 420, margin: "32px auto" }}>
+        <strong>This account does not have admin access.</strong>
+        <span className="muted">Admins sign in with a mobile number on the ZARVA admin list.</span>
+        <button className="btn" onClick={async () => { await signOut(); router.replace(loginUrl("admin")); }}>Sign in with another number</button>
+      </div>
     );
   }
-  if (allowed === false) return <div className="card" style={{ marginTop: 24 }}>This account does not have admin access.</div>;
   if (allowed === null) return <p className="muted">{error ?? "Loading…"}</p>;
 
   const catName = (id: string) => cats.find((c) => c.id === id)?.name ?? "";

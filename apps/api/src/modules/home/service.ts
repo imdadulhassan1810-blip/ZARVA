@@ -8,7 +8,7 @@ import {
 } from "@zarva/core";
 import type { Db, Tx } from "../../db/client";
 import { addresses, payments, users } from "../../db/schema";
-import { AppError, badRequest, conflict, forbidden, notFound } from "../../lib/errors";
+import { AppError, badRequest, conflict, forbidden, notFound, pgErrorCode } from "../../lib/errors";
 import type { PaymentRow, PaymentService } from "../../payments/service";
 import type { NotificationService } from "../../notify";
 import type { EarningsService } from "./earnings";
@@ -365,7 +365,7 @@ export class HomeServicesService {
         }
       });
     } catch (e) {
-      if ((e as { code?: string }).code === "23505") throw conflict("slot_clash", `${pro.name} already has a job at this time`);
+      if (pgErrorCode(e) === "23505") throw conflict("slot_clash", `${pro.name} already has a job at this time`);
       throw e;
     }
   }

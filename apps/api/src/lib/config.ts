@@ -61,6 +61,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     if (base.EMAIL_PROVIDER !== "resend") throw new Error("Production must send real email (EMAIL_PROVIDER=resend)");
     if (base.DATABASE_URL.startsWith("pglite")) throw new Error("Production must use PostgreSQL, not the demo database");
     if (base.PUBLIC_WEB_URL.includes("localhost")) throw new Error("Set PUBLIC_WEB_URL to your website address in production");
+    // Without this the website's requests to the API are blocked by the browser.
+    if (!cleaned.CORS_ORIGINS || base.CORS_ORIGINS.includes("localhost")) throw new Error("Set CORS_ORIGINS to your website address in production, e.g. https://zarva.in");
   }
   const codesStayLocal = base.OTP_PROVIDER !== "msg91" && base.EMAIL_PROVIDER !== "resend";
   const devShortcuts = base.NODE_ENV !== "production" && codesStayLocal;

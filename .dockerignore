@@ -1,0 +1,11 @@
+# Keep local installs, builds, the demo database and secrets out of the API image.
+**/node_modules
+**/.next
+**/.expo
+**/.data
+**/dist
+**/*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.git

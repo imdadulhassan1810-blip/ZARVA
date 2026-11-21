@@ -2,7 +2,7 @@ import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import type { AuthTokens, LoginResult, PublicUser } from "@zarva/core";
 import type { Db } from "../db/client";
 import { otpChallenges, sessions, users } from "../db/schema";
-import { AppError, badRequest, tooMany, unauthorized } from "../lib/errors";
+import { AppError, badRequest, tooMany, unauthorized, pgErrorCode } from "../lib/errors";
 import type { EmailSender } from "./email-sender";
 import type { GoogleVerifier } from "./google";
 import type { OtpSender } from "./otp-sender";
@@ -193,7 +193,7 @@ export class AuthService {
       return toPublicUser(u!);
     } catch (e) {
       // Unique violation: someone else linked it between our check and the update.
-      if ((e as { code?: string }).code === "23505") throw new AppError(409, `${target.kind}_in_use`, "Already linked to another account");
+      if (pgErrorCode(e) === "23505") throw new AppError(409, `${target.kind}_in_use`, "Already linked to another account");
       throw e;
     }
   }

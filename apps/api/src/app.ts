@@ -85,7 +85,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   await app.register(helmet);
-  await app.register(cors, { origin: deps.config.CORS_ORIGINS.split(",").map((s) => s.trim()) });
+  // List the methods: @fastify/cors 11 only allows GET, HEAD and POST by default, which would block
+  // the website's PUT / PATCH / DELETE calls (partner uploads, profile and address edits).
+  await app.register(cors, {
+    origin: deps.config.CORS_ORIGINS.split(",").map((s) => s.trim()),
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
+  });
 
   const googleIds = deps.config.GOOGLE_CLIENT_ID.split(",").map((s) => s.trim()).filter(Boolean);
   const google =

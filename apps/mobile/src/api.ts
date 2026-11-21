@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { createApiClient, type AuthTokens, type TokenStore } from "@zarva/core";
@@ -9,17 +10,25 @@ export type AppMode = "customer" | "partner";
  * The customer app and the partner app keep separate tokens: a partner sign-in never opens the
  * customer app, and the server refuses the other app's screens.
  */
+/** The browser preview (expo start --web) has no Keychain, so it keeps tokens in localStorage. Phones never use this. */
+const web = Platform.OS === "web";
+const kv = {
+  get: (k: string) => (web ? Promise.resolve(globalThis.localStorage?.getItem(k) ?? null) : SecureStore.getItemAsync(k)),
+  set: (k: string, v: string) => (web ? Promise.resolve(globalThis.localStorage?.setItem(k, v)) : SecureStore.setItemAsync(k, v)),
+  del: (k: string) => (web ? Promise.resolve(globalThis.localStorage?.removeItem(k)) : SecureStore.deleteItemAsync(k)),
+};
+
 function secureStore(key: string) {
   let cache: AuthTokens | null = null;
   const store: TokenStore = {
     get: () => cache,
     set(t) {
       cache = t;
-      void (t ? SecureStore.setItemAsync(key, JSON.stringify(t)) : SecureStore.deleteItemAsync(key));
+      void (t ? kv.set(key, JSON.stringify(t)) : kv.del(key));
     },
   };
   const load = async () => {
-    const raw = await SecureStore.getItemAsync(key);
+    const raw = await kv.get(key);
     cache = raw ? (JSON.parse(raw) as AuthTokens) : null;
     return cache !== null;
   };

@@ -7,7 +7,7 @@ import type { EmailSender } from "./email-sender";
 import type { GoogleVerifier } from "./google";
 import type { OtpSender } from "./otp-sender";
 import {
-  ACCESS_TTL_SECONDS, REFRESH_TTL_DAYS, generateOtp, hashOtp, newRefreshToken, sha256, signAccessToken,
+  type Portal, ACCESS_TTL_SECONDS, REFRESH_TTL_DAYS, generateOtp, hashOtp, newRefreshToken, sha256, signAccessToken,
 } from "./tokens";
 
 export const OTP_TTL_SECONDS = 5 * 60;
@@ -18,6 +18,8 @@ export const OTP_MAX_ATTEMPTS = 5;
 type UserRow = typeof users.$inferSelect;
 /** Where a one-time code goes. Phone is E.164, email is lower-case; both already validated. */
 export type CodeTarget = { kind: "phone"; value: string } | { kind: "email"; value: string };
+/** The two apps a user can sign in to. Admins sign in elsewhere (admin/accounts.ts). */
+export type UserPortal = Exclude<Portal, "admin">;
 
 export function toPublicUser(u: UserRow): PublicUser {
   return {
@@ -131,12 +133,14 @@ export class AuthService {
   requestOtp(phone: string, ip?: string) {
     return this.requestCode({ kind: "phone", value: phone }, ip);
   }
-  verifyOtp(phone: string, code: string, deviceName?: string) {
-    return this.loginWithCode({ kind: "phone", value: phone }, code, deviceName);
+  verifyOtp(phone: string, code: string, deviceName?: string, portal: UserPortal = "customer") {
+    return this.loginWithCode({ kind: "phone", value: phone }, code, deviceName, portal);
   }
 
   /** Sign in (or sign up) with a phone or email code. */
-  async loginWithCode(target: CodeTarget, code: string, deviceName?: string): Promise<LoginResult> {
+  async loginWithCode(target: CodeTarget, code: string, deviceName?: string, portal: UserPortal = "customer"): Promise<LoginResult> {
+    // Partners are identified by their mobile number (payouts, SMS, KYC), so the partner app is phone-only.
+    if (portal === "partner" && target.kind !== "phone") throw badRequest("partner_phone_only", "Partners sign in with their mobile number");
     await this.consumeCode(target, code);
     const now = this.now();
     const values = target.kind === "phone" ? { phone: target.value, phoneVerifiedAt: now } : { email: target.value, emailVerifiedAt: now };
@@ -144,7 +148,7 @@ export class AuthService {
     const inserted = await this.db.insert(users).values(values).onConflictDoNothing({ target: conflict }).returning();
     const user = inserted[0] ?? (await this.db.query.users.findFirst({ where: eq(conflict, target.value) }));
     if (!user) throw new AppError(500, "internal", "User not found after upsert");
-    return this.finishLogin(user, inserted.length > 0, deviceName);
+    return this.finishLogin(user, inserted.length > 0, deviceName, portal);
   }
 
   /**
@@ -204,19 +208,20 @@ export class AuthService {
     }
   }
 
-  private async finishLogin(user: UserRow, isNewUser: boolean, deviceName?: string): Promise<LoginResult> {
+  private async finishLogin(user: UserRow, isNewUser: boolean, deviceName?: string, portal: UserPortal = "customer"): Promise<LoginResult> {
     if (user.status !== "active") throw new AppError(403, "account_blocked", "This account is not active");
-    const tokens = await this.createSession(user.id, deviceName);
+    const tokens = await this.createSession(user.id, deviceName, portal);
     return { ...tokens, user: toPublicUser(user), isNewUser };
   }
 
-  private async createSession(userId: string, deviceName?: string): Promise<AuthTokens> {
+  /** Each session belongs to one app: a partner sign-in never opens the customer app, and the reverse. */
+  private async createSession(userId: string, deviceName: string | undefined, portal: UserPortal): Promise<AuthTokens> {
     const { token, hash } = newRefreshToken();
     const [s] = await this.db
       .insert(sessions)
-      .values({ userId, tokenHash: hash, deviceName, expiresAt: new Date(this.now().getTime() + REFRESH_TTL_DAYS * 86400_000) })
+      .values({ userId, tokenHash: hash, deviceName, portal, expiresAt: new Date(this.now().getTime() + REFRESH_TTL_DAYS * 86400_000) })
       .returning({ id: sessions.id });
-    return { accessToken: await signAccessToken(this.secret, userId, s!.id), refreshToken: token, expiresIn: ACCESS_TTL_SECONDS };
+    return { accessToken: await signAccessToken(this.secret, userId, s!.id, portal), refreshToken: token, expiresIn: ACCESS_TTL_SECONDS };
   }
 
   /** Rotates the refresh token. Re-use of a revoked token revokes every session of that user. */
@@ -235,15 +240,16 @@ export class AuthService {
       .where(and(eq(sessions.id, s.id), isNull(sessions.revokedAt)))
       .returning({ id: sessions.id });
     if (revoked.length === 0) throw unauthorized("Session was revoked. Please sign in again");
-    return this.createSession(s.userId, s.deviceName ?? undefined);
+    return this.createSession(s.userId, s.deviceName ?? undefined, s.portal);
   }
 
   async logout(refreshToken: string): Promise<void> {
     await this.db.update(sessions).set({ revokedAt: this.now() }).where(eq(sessions.tokenHash, sha256(refreshToken)));
   }
 
-  async isSessionActive(sessionId: string): Promise<boolean> {
-    const s = await this.db.query.sessions.findFirst({ where: eq(sessions.id, sessionId), columns: { revokedAt: true, expiresAt: true } });
-    return !!s && !s.revokedAt && s.expiresAt > this.now();
+  /** Live, not logged out, and opened in this app. */
+  async isSessionActive(sessionId: string, portal: UserPortal = "customer"): Promise<boolean> {
+    const s = await this.db.query.sessions.findFirst({ where: eq(sessions.id, sessionId), columns: { revokedAt: true, expiresAt: true, portal: true } });
+    return !!s && !s.revokedAt && s.expiresAt > this.now() && s.portal === portal;
   }
 }

@@ -19,7 +19,7 @@ function toAddress(a: typeof addresses.$inferSelect): Address {
 }
 
 export async function meRoutes(app: FastifyInstance) {
-  app.addHook("preHandler", app.requireAuth);
+  app.addHook("preHandler", app.requireCustomer);
 
   app.get("/v1/me", async (req) => {
     const u = await app.db.query.users.findFirst({ where: eq(users.id, req.userId!) });

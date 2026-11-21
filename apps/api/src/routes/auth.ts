@@ -11,8 +11,8 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post("/v1/auth/otp/verify", async (req) => {
-    const { phone, code, deviceName } = parse(verifyOtpSchema, req.body);
-    return app.services.auth.verifyOtp(phone, code, deviceName ?? req.headers["user-agent"]?.slice(0, 80));
+    const { phone, code, deviceName, portal } = parse(verifyOtpSchema, req.body);
+    return app.services.auth.verifyOtp(phone, code, deviceName ?? req.headers["user-agent"]?.slice(0, 80), portal);
   });
 
   app.get("/v1/auth/providers", async (): Promise<AuthProviders> => {

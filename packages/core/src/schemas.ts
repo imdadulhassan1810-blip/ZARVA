@@ -14,7 +14,20 @@ export const phoneSchema = z
 export const otpSchema = z.string().regex(/^\d{6}$/, "OTP must be 6 digits");
 
 export const requestOtpSchema = z.object({ phone: phoneSchema });
-export const verifyOtpSchema = z.object({ phone: phoneSchema, code: otpSchema, deviceName: z.string().max(80).optional() });
+/** Which app the sign-in opens. "partner" sessions can't use customer screens, and the reverse. */
+export const userPortalSchema = z.enum(["customer", "partner"]);
+export type UserPortal = z.infer<typeof userPortalSchema>;
+export const verifyOtpSchema = z.object({ phone: phoneSchema, code: otpSchema, deviceName: z.string().max(80).optional(), portal: userPortalSchema.default("customer") });
+/** ZARVA-issued admin usernames: lower-case letters, digits, dot, dash, underscore. */
+export const adminUsernameSchema = z.string().trim().toLowerCase().regex(/^[a-z0-9._-]{3,32}$/, "Username: 3-32 letters, digits, . _ or -");
+export const adminPasswordSchema = z.string().min(10, "Password must be at least 10 characters").max(200);
+export const adminLoginSchema = z.object({
+  username: adminUsernameSchema,
+  password: z.string().min(1).max(200),
+  code: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code").optional(),
+});
+export const adminCreateSchema = z.object({ username: adminUsernameSchema, name: z.string().trim().min(2).max(80) });
+export const adminPasswordChangeSchema = z.object({ currentPassword: z.string().min(1).max(200), newPassword: adminPasswordSchema });
 export const emailSchema = z
   .string()
   .trim()

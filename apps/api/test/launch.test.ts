@@ -9,27 +9,28 @@ import { FAKE_JPEG, completeKyc, setupTestApp } from "./helpers";
 // Monday 23 Nov 2026, 09:00 IST.
 const START = new Date("2026-11-23T03:30:00.000Z");
 const clock = { t: START.getTime() };
-const ADMIN = "9999900000";
+const ADMIN = "admin";
 const P = "/v1/m/home";
 let t: Awaited<ReturnType<typeof setupTestApp>>;
 type Session = Awaited<ReturnType<typeof t.login>>;
 let sessions: Map<string, Promise<Session>>;
 const login = (phone: string) => {
-  if (!sessions.has(phone)) sessions.set(phone, t.login(phone));
+  // Test convention: 90000 xxxxx numbers are partners (partner app), ADMIN is the ZARVA admin login, others are customers.
+  if (!sessions.has(phone)) sessions.set(phone, (phone === ADMIN ? t.loginAdmin() : t.login(phone, phone.startsWith("90000") ? "partner" : "customer")) as Promise<Session>);
   return sessions.get(phone)!;
 };
 
 beforeEach(async () => {
   sessions = new Map();
   clock.t = START.getTime();
-  t = await setupTestApp({ ENABLED_MODULES: "home", ADMIN_PHONES: ADMIN }, { now: () => new Date(clock.t) });
+  t = await setupTestApp({ ENABLED_MODULES: "home" }, { now: () => new Date(clock.t) });
 });
 afterEach(async () => { await t.close(); });
 /** Restart the app with the "manual" payout provider (admin pays by UPI and types the UTR). */
 async function useManualPayouts() {
   await t.close();
   sessions = new Map();
-  t = await setupTestApp({ ENABLED_MODULES: "home", ADMIN_PHONES: ADMIN }, { now: () => new Date(clock.t), payoutProvider: new ManualPayoutProvider() });
+  t = await setupTestApp({ ENABLED_MODULES: "home" }, { now: () => new Date(clock.t), payoutProvider: new ManualPayoutProvider() });
 }
 
 async function req(method: "GET" | "POST" | "PATCH" | "PUT", url: string, s?: Session, payload?: unknown) {
@@ -255,12 +256,18 @@ describe("partner sign-up and KYC", () => {
     expect(m[0]!.text).toContain("changed to A/c XXXX9012");
   });
 
-  it("needs a verified phone to sign up as a partner", async () => {
+  it("the partner app is mobile-number only: a Google or email sign-in can't open it", async () => {
     const g = await t.app.inject({ method: "POST", url: "/v1/auth/google", payload: { idToken: "mock:pro@gmail.com:Pro" } });
     const headers = { authorization: `Bearer ${g.json().accessToken}` };
     const c = await catalog();
     const r = await t.app.inject({ method: "POST", url: `${P}/pro/apply`, headers, payload: { name: "Pro", cityId: "durgapur", categoryIds: [c.cat("plumber").id] } });
-    expect(r.json().error.code).toBe("phone_required");
+    expect(r.json().error.code).toBe("wrong_portal");
+    await t.app.inject({ method: "POST", url: "/v1/auth/email/request", payload: { email: "pro@example.com" } });
+    const code = t.mail.last.get("pro@example.com")!;
+    // Asking for the partner app by email still gives a customer session, which the partner app refuses.
+    const e = await t.app.inject({ method: "POST", url: "/v1/auth/email/verify", payload: { email: "pro@example.com", code, portal: "partner" } });
+    const r2 = await t.app.inject({ method: "GET", url: `${P}/pro/me`, headers: { authorization: `Bearer ${e.json().accessToken}` } });
+    expect(r2.json().error.code).toBe("wrong_portal");
   });
 });
 

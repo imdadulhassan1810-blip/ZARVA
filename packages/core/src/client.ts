@@ -1,4 +1,4 @@
-import type { Address, AuthProviders, AuthTokens, LoginResult, PublicUser } from "./api-types";
+import type { Address, AdminAccount, AdminCreated, AdminLoginResult, AuthProviders, AuthTokens, LoginResult, PublicUser } from "./api-types";
 import type { ModuleStatus } from "./modules";
 import type { AddressInput, ProfileUpdate } from "./schemas";
 import type {
@@ -22,8 +22,15 @@ export interface TokenStore {
 
 const H = "/v1/m/home";
 
+/**
+ * Which app this client signs in to. Each app keeps its own tokens: a partner sign-in never opens
+ * the customer app, and the server refuses the other app's screens ("wrong_portal").
+ */
+export type Portal = "customer" | "partner" | "admin";
+
 /** Tiny typed client shared by web and mobile. Refreshes the access token once on 401. */
-export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: typeof fetch = fetch) {
+export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: typeof fetch = fetch, portal: Portal = "customer") {
+  const authBase = portal === "admin" ? "/v1/admin/auth" : "/v1/auth";
   async function raw<T>(method: string, path: string, body?: unknown, auth = true): Promise<T> {
     const headers: Record<string, string> = {};
     if (body !== undefined) headers["content-type"] = "application/json";
@@ -49,7 +56,7 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
       const tokens = store.get();
       if (e instanceof ApiRequestError && e.status === 401 && tokens) {
         try {
-          const fresh = await raw<AuthTokens>("POST", "/v1/auth/refresh", { refreshToken: tokens.refreshToken }, false);
+          const fresh = await raw<AuthTokens>("POST", `${authBase}/refresh`, { refreshToken: tokens.refreshToken }, false);
           store.set(fresh);
         } catch {
           store.set(null);
@@ -61,15 +68,16 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
     }
   }
 
-  async function login(path: string, body: unknown): Promise<LoginResult> {
-    const r = await raw<LoginResult>("POST", path, body, false);
+  async function login<R extends AuthTokens = LoginResult>(path: string, body: unknown): Promise<R> {
+    const r = await raw<R>("POST", path, body, false);
     store.set({ accessToken: r.accessToken, refreshToken: r.refreshToken, expiresIn: r.expiresIn });
     return r;
   }
 
   return {
     requestOtp: (phone: string) => raw<{ sent: true; retryAfter: number }>("POST", "/v1/auth/otp/request", { phone }, false),
-    verifyOtp: (phone: string, code: string) => login("/v1/auth/otp/verify", { phone, code }),
+    portal,
+    verifyOtp: (phone: string, code: string) => login("/v1/auth/otp/verify", { phone, code, portal: portal === "partner" ? "partner" : "customer" }),
     providers: () => raw<AuthProviders>("GET", "/v1/auth/providers", undefined, false),
     requestEmailCode: (email: string) => raw<{ sent: true; retryAfter: number }>("POST", "/v1/auth/email/request", { email }, false),
     verifyEmailCode: (email: string, code: string) => login("/v1/auth/email/verify", { email, code }),
@@ -80,7 +88,7 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
     verifyEmailLink: (email: string, code: string) => call<{ user: PublicUser }>("POST", "/v1/me/email/verify", { email, code }),
     logout: async () => {
       const t = store.get();
-      if (t) await raw("POST", "/v1/auth/logout", { refreshToken: t.refreshToken }, false).catch(() => undefined);
+      if (t) await raw("POST", `${authBase}/logout`, { refreshToken: t.refreshToken }, false).catch(() => undefined);
       store.set(null);
     },
     me: () => call<{ user: PublicUser }>("GET", "/v1/me"),
@@ -94,9 +102,13 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
     mockPaymentSuccess: (providerOrderId: string) =>
       raw<{ confirmation: PaymentConfirmation }>("POST", `/v1/payments/mock/${encodeURIComponent(providerOrderId)}/succeed`, undefined, false),
 
-    /** Is this account an admin, and does this session still need the authenticator code? */
-    adminStatus: () => call<{ admin: boolean; needsCode: boolean; unlocked: boolean }>("GET", "/v1/admin/status"),
-    adminUnlock: (code: string) => call<{ unlocked: true; until: string }>("POST", "/v1/admin/unlock", { code }),
+    /** Admin app only: ZARVA-issued username + password + 6-digit authenticator code. */
+    adminLogin: (username: string, password: string, code?: string) => login<AdminLoginResult>("/v1/admin/auth/login", { username, password, code: code || undefined }),
+    adminMe: () => call<{ admin: AdminAccount }>("GET", "/v1/admin/me"),
+    adminChangePassword: (currentPassword: string, newPassword: string) => call<void>("POST", "/v1/admin/me/password", { currentPassword, newPassword }),
+    adminTeam: () => call<{ admins: AdminAccount[] }>("GET", "/v1/admin/team"),
+    adminCreate: (username: string, name: string) => call<AdminCreated>("POST", "/v1/admin/team", { username, name }),
+    adminSetStatus: (id: string, status: "active" | "disabled") => call<{ admin: AdminAccount }>("PATCH", `/v1/admin/team/${id}`, { status }),
 
     home: {
       cities: () => raw<{ cities: HomeCity[] }>("GET", `${H}/cities`, undefined, false),

@@ -59,10 +59,6 @@ services:
         sync: false
       - key: PAYOUT_PROVIDER
         value: manual
-      - key: ADMIN_PHONES
-        sync: false
-      - key: ADMIN_TOTP_SECRETS
-        sync: false
 
   - type: web
     name: zarva-web

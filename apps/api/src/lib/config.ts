@@ -20,13 +20,6 @@ const envSchema = z.object({
   PAYMENT_PROVIDER: z.enum(["mock", "razorpay"]).default("mock"),
   /** Home services is the launch vertical, so it is on unless you override this. */
   ENABLED_MODULES: z.string().default("home"),
-  /** Comma-separated mobile numbers allowed into admin screens, e.g. "9876543210,9123456780". */
-  ADMIN_PHONES: z.string().default(""),
-  /**
-   * Second factor for admins: authenticator-app secrets, "9876543210:BASE32SECRET,9123456780:BASE32SECRET".
-   * Required for every admin on a real deployment. Generate one with `pnpm admin:2fa 9876543210`.
-   */
-  ADMIN_TOTP_SECRETS: z.string().default(""),
   CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:8081"),
   /** The customer website, used in links inside messages. */
   PUBLIC_WEB_URL: z.string().url().default("http://localhost:3000"),
@@ -56,22 +49,7 @@ export type Config = z.infer<typeof envSchema> & {
    * there even if NODE_ENV was forgotten.
    */
   devShortcuts: boolean;
-  /** Admin phones, E.164. */
-  adminPhones: string[];
-  /** E.164 phone -> base32 TOTP secret. */
-  adminTotp: Map<string, string>;
 };
-
-const PHONE = /^(?:\+91|91|0)?([6-9]\d{9})$/;
-const BASE32 = /^[A-Z2-7]{16,}=*$/;
-
-function parsePhoneList(raw: string, name: string): string[] {
-  return raw.split(",").map((s) => s.trim().replace(/[\s-]/g, "")).filter(Boolean).map((s) => {
-    const m = PHONE.exec(s);
-    if (!m) throw new Error(`${name}: "${s}" is not a valid Indian mobile number`);
-    return `+91${m[1]}`;
-  });
-}
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
   // Treat blank lines in .env ("JWT_SECRET=") as unset so defaults apply.
@@ -97,24 +75,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     if (!base.KYC_ENCRYPTION_KEY) throw new Error("Real deployment: set KYC_ENCRYPTION_KEY (32+ random characters) to protect partner ID documents");
   }
 
-  // Local convenience only: sign in as 99999 00000 to open /admin.
-  const adminRaw = base.ADMIN_PHONES || (devShortcuts && base.NODE_ENV === "development" ? DEV_ADMIN_PHONE : "");
-  const adminPhones = parsePhoneList(adminRaw, "ADMIN_PHONES");
-
-  const adminTotp = new Map<string, string>();
-  for (const entry of base.ADMIN_TOTP_SECRETS.split(",").map((s) => s.trim()).filter(Boolean)) {
-    const [phoneRaw, secretRaw] = entry.split(":");
-    const [phone] = parsePhoneList(phoneRaw ?? "", "ADMIN_TOTP_SECRETS");
-    const secret = (secretRaw ?? "").toUpperCase().replace(/\s/g, "");
-    if (!phone || !BASE32.test(secret)) throw new Error(`ADMIN_TOTP_SECRETS: "${phoneRaw}" needs a base32 secret (pnpm admin:2fa <phone>)`);
-    adminTotp.set(phone, secret);
+  // Admins are no longer configured here: they are ZARVA-issued accounts (pnpm admin:create, or the admin Team tab).
+  for (const old of ["ADMIN_PHONES", "ADMIN_TOTP_SECRETS"]) {
+    if (cleaned[old]) console.warn(`${old} is no longer used. Create admin logins with: pnpm admin:create <username> "<Full name>"`);
   }
-  if (!devShortcuts) {
-    const missing = adminPhones.filter((p) => !adminTotp.has(p));
-    if (missing.length) throw new Error(`Every admin needs an authenticator secret in ADMIN_TOTP_SECRETS. Missing: ${missing.join(", ")}`);
-  }
-
-  return { ...base, ADMIN_PHONES: adminRaw, devShortcuts, adminPhones, adminTotp };
+  return { ...base, devShortcuts };
 }
 
-export const DEV_ADMIN_PHONE = "9999900000";
+/** Local demo admin, created on a developer's machine only (see server.ts). */
+export const DEV_ADMIN = { username: "admin", password: "zarva-admin-dev", name: "Demo admin" } as const;

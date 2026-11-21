@@ -1,27 +1,28 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import type { AuthProviders, LoginResult } from "@zarva/core";
-import { api } from "../lib/api";
-import { clearRoles } from "../lib/roles";
+import type { ApiClient, AuthProviders, LoginResult } from "@zarva/core";
 import { CodeForm } from "./CodeForm";
 import { GoogleButton } from "./GoogleButton";
 
 type Method = "phone" | "email";
 
 /**
- * The sign-in box shared by the customer, partner and admin sign-in pages. All three create or
- * open the same ZARVA account; only the methods offered and where you land afterwards differ.
+ * The one-time-code sign-in box used by the customer and partner sign-in pages. Which app you get
+ * is decided by the client passed in: the customer client opens a customer session, the partner
+ * client a partner session, and neither opens the other app.
  */
 export function SignIn({
+  client,
   title,
   subtitle,
   phoneOnly = false,
   onSignedIn,
   children,
 }: {
+  client: ApiClient;
   title: string;
   subtitle: string;
-  /** Partners and admins are identified by their verified mobile number, so they only get OTP. */
+  /** Partners are identified by their mobile number, so the partner app only offers OTP. */
   phoneOnly?: boolean;
   onSignedIn: (r: LoginResult) => void | Promise<void>;
   children?: React.ReactNode;
@@ -31,15 +32,10 @@ export function SignIn({
 
   useEffect(() => {
     if (phoneOnly) return;
-    api.providers().then(setProviders).catch(() => setProviders({ phone: true, email: true, google: { mode: "off", clientId: null } }));
-  }, [phoneOnly]);
+    client.providers().then(setProviders).catch(() => setProviders({ phone: true, email: true, google: { mode: "off", clientId: null } }));
+  }, [client, phoneOnly]);
 
-  const done = useCallback(async (r: LoginResult) => {
-    clearRoles();
-    await onSignedIn(r);
-  }, [onSignedIn]);
-
-  const onGoogle = useCallback(async (idToken: string) => done(await api.googleLogin(idToken)), [done]);
+  const onGoogle = useCallback(async (idToken: string) => onSignedIn(await client.googleLogin(idToken)), [client, onSignedIn]);
 
   return (
     <div style={{ maxWidth: 420, margin: "24px auto" }}>
@@ -58,9 +54,9 @@ export function SignIn({
         )}
 
         {method === "phone" || phoneOnly ? (
-          <CodeForm key="phone" kind="phone" onSend={(p) => api.requestOtp(p)} onVerify={async (p, c) => done(await api.verifyOtp(p, c))} />
+          <CodeForm key="phone" kind="phone" onSend={(p) => client.requestOtp(p)} onVerify={async (p, c) => onSignedIn(await client.verifyOtp(p, c))} />
         ) : (
-          <CodeForm key="email" kind="email" onSend={(e) => api.requestEmailCode(e)} onVerify={async (e, c) => done(await api.verifyEmailCode(e, c))} />
+          <CodeForm key="email" kind="email" onSend={(e) => client.requestEmailCode(e)} onVerify={async (e, c) => onSignedIn(await client.verifyEmailCode(e, c))} />
         )}
       </div>
       <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>No password needed. We send a one-time code each time you sign in.</p>

@@ -11,7 +11,7 @@ import { Button, Field, Loading } from "./ui";
 
 /**
  * Customer home-services flow on mobile: browse -> cart -> address + slot -> pay -> track.
- * Partner and admin screens are web-only for now (they work in the phone browser).
+ * Customer app only: professionals use the separate ZARVA Partner app (src/partner), admins the web admin app.
  */
 type View_ =
   | { name: "categories" }

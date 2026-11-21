@@ -5,19 +5,20 @@ import { completeKyc, setupTestApp } from "./helpers";
 // Monday 23 Nov 2026, 09:00 IST. First bookable slot is 11:00 IST (2 h lead time).
 const START = new Date("2026-11-23T03:30:00.000Z");
 const clock = { t: START.getTime() };
-const ADMIN = "9999900000";
+const ADMIN = "admin";
 let t: Awaited<ReturnType<typeof setupTestApp>>;
 // OTP has a 30 s resend gap per number, so sign each test phone in once per test.
 let sessions: Map<string, Promise<Session>>;
 const login = (phone = "9876543210") => {
-  if (!sessions.has(phone)) sessions.set(phone, t.login(phone));
+  // Test convention: 90000 xxxxx numbers are partners (partner app), ADMIN is the ZARVA admin login, others are customers.
+  if (!sessions.has(phone)) sessions.set(phone, (phone === ADMIN ? t.loginAdmin() : t.login(phone, phone.startsWith("90000") ? "partner" : "customer")) as Promise<Session>);
   return sessions.get(phone)!;
 };
 
 beforeEach(async () => {
   sessions = new Map();
   clock.t = START.getTime();
-  t = await setupTestApp({ ENABLED_MODULES: "home", ADMIN_PHONES: ADMIN }, { now: () => new Date(clock.t) });
+  t = await setupTestApp({ ENABLED_MODULES: "home" }, { now: () => new Date(clock.t) });
 });
 afterEach(async () => { await t.close(); });
 

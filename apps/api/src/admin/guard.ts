@@ -1,84 +1,57 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { eq } from "drizzle-orm";
+import { adminCreateSchema, adminLoginSchema, adminPasswordChangeSchema, refreshSchema } from "@zarva/core";
 import { z } from "zod";
-import { adminUnlocks, users } from "../db/schema";
-import { AppError, forbidden, tooMany } from "../lib/errors";
+import { verifyAccessToken } from "../auth/tokens";
+import { AppError, unauthorized } from "../lib/errors";
 import { parse } from "../lib/validate";
-import { verifyTotp } from "./totp";
-
-const UNLOCK_HOURS = 8;
-const MAX_FAILS = 5;
-const LOCK_MINUTES = 15;
 
 /**
- * Who is an admin, decided on the server for every admin request:
- *  1. signed in (valid, not-logged-out session),
- *  2. the account's VERIFIED phone is in ADMIN_PHONES,
- *  3. this session was unlocked with a 6-digit authenticator code in the last 8 hours
- *     (required on every real deployment; optional on a developer's machine).
+ * The admin app. Who is an admin is decided on the server for every admin request:
+ *  1. an admin access token (only /v1/admin/auth/login issues those: username + password + authenticator code),
+ *  2. its admin session is live (not logged out, under 12 hours old),
+ *  3. the admin account is still active.
+ * Customer and partner tokens are refused here, and admin tokens are refused everywhere else.
  */
 export function registerAdminGuard(app: FastifyInstance) {
-  const cfg = app.config;
-  const admins = new Set(cfg.adminPhones);
-
-  async function adminPhoneOf(req: FastifyRequest): Promise<string | null> {
-    const u = await app.db.query.users.findFirst({ where: eq(users.id, req.userId!) });
-    return u?.phone && admins.has(u.phone) ? u.phone : null;
-  }
-
-  /** Second factor is needed when this admin has a secret, and always outside local dev. */
-  const needsCode = (phone: string) => cfg.adminTotp.has(phone) || !cfg.devShortcuts;
-
-  async function isUnlocked(sessionId: string): Promise<boolean> {
-    const row = await app.db.query.adminUnlocks.findFirst({ where: eq(adminUnlocks.sessionId, sessionId) });
-    return !!row?.unlockedUntil && row.unlockedUntil > app.now();
-  }
+  const admins = app.services.admins;
 
   app.decorate("requireAdmin", async (req: FastifyRequest) => {
-    await app.requireAuth(req, undefined as never);
-    const phone = await adminPhoneOf(req);
-    if (!phone) throw forbidden("Admins only");
-    if (needsCode(phone) && !(await isUnlocked(req.sessionId!))) {
-      throw new AppError(403, "admin_code_required", "Enter the 6-digit code from your authenticator app");
+    const h = req.headers.authorization;
+    if (!h?.startsWith("Bearer ")) throw unauthorized();
+    let claims;
+    try {
+      claims = await verifyAccessToken(app.config.JWT_SECRET, h.slice(7));
+    } catch {
+      throw unauthorized("Session expired");
     }
+    if (claims.portal !== "admin") throw new AppError(403, "wrong_portal", "Admins only. Sign in on the ZARVA admin page.");
+    if (!(await admins.isSessionActive(claims.sessionId, claims.subjectId))) throw unauthorized("Session ended");
+    req.adminId = claims.subjectId;
+    req.sessionId = claims.sessionId;
+  });
+
+  app.post("/v1/admin/auth/login", async (req) => admins.login(parse(adminLoginSchema, req.body)));
+  app.post("/v1/admin/auth/refresh", async (req) => admins.refresh(parse(refreshSchema, req.body).refreshToken));
+  app.post("/v1/admin/auth/logout", async (req, reply) => {
+    await admins.logout(parse(refreshSchema, req.body).refreshToken);
+    return reply.code(204).send();
   });
 
   app.register(async (r) => {
-    r.addHook("preHandler", app.requireAuth);
-
-    r.get("/v1/admin/status", async (req) => {
-      const phone = await adminPhoneOf(req);
-      if (!phone) return { admin: false, needsCode: false, unlocked: false };
-      const need = needsCode(phone);
-      return { admin: true, needsCode: need, unlocked: need ? await isUnlocked(req.sessionId!) : true };
+    r.addHook("preHandler", app.requireAdmin);
+    r.get("/v1/admin/me", async (req) => ({ admin: await admins.get(req.adminId!) }));
+    r.post("/v1/admin/me/password", async (req, reply) => {
+      const b = parse(adminPasswordChangeSchema, req.body);
+      await admins.changePassword(req.adminId!, req.sessionId!, b.currentPassword, b.newPassword);
+      return reply.code(204).send();
     });
-
-    r.post("/v1/admin/unlock", async (req) => {
-      const { code } = parse(z.object({ code: z.string().trim() }), req.body);
-      const phone = await adminPhoneOf(req);
-      if (!phone) throw forbidden("Admins only");
-      const secret = cfg.adminTotp.get(phone);
-      if (!secret) throw new AppError(400, "admin_code_not_set_up", "No authenticator is set up for this admin. Run pnpm admin:2fa.");
-      const now = app.now();
-      const sessionId = req.sessionId!;
-      const row = await app.db.query.adminUnlocks.findFirst({ where: eq(adminUnlocks.sessionId, sessionId) });
-      if (row?.lockedUntil && row.lockedUntil > now) {
-        throw tooMany("Too many wrong codes. Try again later.", Math.ceil((row.lockedUntil.getTime() - now.getTime()) / 1000));
-      }
-      const step = verifyTotp(secret, code, now);
-      if (step === null || (row?.lastStep != null && step <= row.lastStep)) {
-        const fails = (row?.failedAttempts ?? 0) + 1;
-        const lockedUntil = fails >= MAX_FAILS ? new Date(now.getTime() + LOCK_MINUTES * 60_000) : null;
-        await app.db.insert(adminUnlocks)
-          .values({ sessionId, failedAttempts: lockedUntil ? 0 : fails, lockedUntil, updatedAt: now })
-          .onConflictDoUpdate({ target: adminUnlocks.sessionId, set: { failedAttempts: lockedUntil ? 0 : fails, lockedUntil, updatedAt: now } });
-        throw new AppError(400, "wrong_admin_code", "Wrong or already-used code");
-      }
-      const unlockedUntil = new Date(now.getTime() + UNLOCK_HOURS * 3600_000);
-      await app.db.insert(adminUnlocks)
-        .values({ sessionId, unlockedUntil, failedAttempts: 0, lockedUntil: null, lastStep: step, updatedAt: now })
-        .onConflictDoUpdate({ target: adminUnlocks.sessionId, set: { unlockedUntil, failedAttempts: 0, lockedUntil: null, lastStep: step, updatedAt: now } });
-      return { unlocked: true, until: unlockedUntil.toISOString() };
+    // The team: only an admin can add another admin. There is no sign-up.
+    r.get("/v1/admin/team", async () => ({ admins: await admins.list() }));
+    r.post("/v1/admin/team", async (req, reply) => reply.code(201).send(await admins.create(req.adminId!, parse(adminCreateSchema, req.body))));
+    r.patch("/v1/admin/team/:id", async (req) => {
+      const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
+      const { status } = parse(z.object({ status: z.enum(["active", "disabled"]) }), req.body);
+      return { admin: await admins.setStatus(req.adminId!, id, status) };
     });
   });
 }

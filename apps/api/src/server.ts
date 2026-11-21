@@ -3,7 +3,7 @@ import { ConsoleOtpSender, MemoryOtpSender, Msg91OtpSender, type OtpSender } fro
 import { ConsoleEmailSender, MemoryEmailSender, ResendEmailSender, type EmailSender } from "./auth/email-sender";
 import { buildApp } from "./app";
 import { connectDb } from "./db/connect";
-import { DEV_ADMIN_PHONE, loadConfig } from "./lib/config";
+import { DEV_ADMIN, loadConfig } from "./lib/config";
 import { ensureHomeSeed } from "./modules/home/seed";
 
 const config = loadConfig();
@@ -32,6 +32,12 @@ const app = await buildApp({
   logger: config.NODE_ENV === "production",
 });
 await app.listen({ port: config.PORT, host: "0.0.0.0" });
+// Local demo admin (developer's machine only): username "admin", no authenticator needed locally.
+let devAdmin = false;
+if (config.devShortcuts && config.NODE_ENV === "development" && (await app.services.admins.count()) === 0) {
+  await app.services.admins.create(null, DEV_ADMIN, { password: DEV_ADMIN.password, withAuthenticator: false });
+  devAdmin = true;
+}
 // Sends queued SMS / WhatsApp updates every few seconds, and right after each change.
 app.services.notify.start();
 for (const sig of ["SIGTERM", "SIGINT"] as const) {
@@ -39,6 +45,10 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
 }
 console.log(`\n  ZARVA API ready on http://localhost:${config.PORT}  (database: ${kind})`);
 if (homeSeed.seeded) console.log(`  Home services: Durgapur catalogue loaded${kind === "pglite" && config.devShortcuts ? ", demo professionals 90000 00001 to 90000 00008" : ""}.`);
-if (homeOn && config.devShortcuts && config.ADMIN_PHONES === DEV_ADMIN_PHONE) console.log("  Admin screens: sign in as 99999 00000 and open http://localhost:3000/admin");
+if (devAdmin || (config.devShortcuts && config.NODE_ENV === "development")) {
+  console.log(`  Admin app: http://localhost:3000/admin/login  (demo login: ${DEV_ADMIN.username} / ${DEV_ADMIN.password})`);
+} else if ((await app.services.admins.count()) === 0) {
+  console.log('  No admin logins yet. Create the first one with: pnpm admin:create <username> "<Full name>"');
+}
 if (config.OTP_PROVIDER === "console") console.log("  Sign-in codes (OTP) will be printed here.");
 if (config.SMS_PROVIDER === "console" || config.WHATSAPP_PROVIDER === "console") console.log("  Booking SMS / WhatsApp updates will be printed here too (nothing is really sent).\n");

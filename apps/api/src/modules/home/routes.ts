@@ -38,9 +38,9 @@ export function homeRoutes(
     return { days: await svc.slots(q.city, q.categoryId) };
   });
 
-  // ----- Signed-in customer -----
+  // ----- Customer app -----
   app.register(async (r) => {
-    r.addHook("preHandler", app.requireAuth);
+    r.addHook("preHandler", app.requireCustomer);
 
     r.post(`${prefix}/bookings`, async (req, reply) => {
       const input = parse(homeCreateBookingSchema, req.body);
@@ -60,8 +60,12 @@ export function homeRoutes(
       return { booking: await svc.cancel(req.userId!, parse(idParam, req.params).id, reason) };
     });
 
-    // ----- Service professional -----
-    // Sign-up and KYC (any signed-in user can start one).
+  });
+
+  // ----- Partner app (sessions opened on the partner sign-in page only) -----
+  app.register(async (r) => {
+    r.addHook("preHandler", app.requirePartner);
+    // Sign-up and KYC (anyone signed in to the partner app can start one).
     r.get(`${prefix}/pro/me`, async (req) => ({ pro: await partners.me(req.userId!) }));
     r.post(`${prefix}/pro/apply`, async (req, reply) => reply.code(201).send({ pro: await partners.apply(req.userId!, parse(homeProApplySchema, req.body)) }));
     r.patch(`${prefix}/pro/me`, async (req) => ({ pro: await partners.update(req.userId!, parse(homeProUpdateSchema, req.body)) }));
@@ -86,9 +90,9 @@ export function homeRoutes(
     });
   });
 
-  // ----- Admin (phones listed in ADMIN_PHONES) -----
+  // ----- Admin app -----
   app.register(async (r) => {
-    // Every admin route: signed in + verified phone in ADMIN_PHONES + authenticator code. See admin/guard.ts.
+    // Every admin route: a ZARVA team session (username + password + authenticator code). See admin/guard.ts.
     r.addHook("preHandler", app.requireAdmin);
     r.get(`${prefix}/admin/bookings`, async (req) => {
       const { status } = parse(z.object({ status: z.enum(homeBookingStatuses).optional() }), req.query);
@@ -106,11 +110,11 @@ export function homeRoutes(
     r.patch(`${prefix}/admin/pros/:id`, async (req) => {
       // active = approve a submitted profile or re-activate a suspended one.
       const { status } = parse(z.object({ status: z.enum(["active", "suspended"]) }), req.body);
-      return { pro: await partners.setStatus(req.userId!, parse(idParam, req.params).id, status) };
+      return { pro: await partners.setStatus(req.adminId!, parse(idParam, req.params).id, status) };
     });
     r.post(`${prefix}/admin/pros/:id/reject`, async (req) => {
       const { reason } = parse(z.object({ reason: z.string().trim().min(5).max(200) }), req.body);
-      return { pro: await partners.reject(req.userId!, parse(idParam, req.params).id, reason) };
+      return { pro: await partners.reject(req.adminId!, parse(idParam, req.params).id, reason) };
     });
     r.get(`${prefix}/admin/pros/:id/documents/:kind`, async (req, reply) => {
       const { id, kind } = parse(docParam.required({ id: true }), req.params);
@@ -134,7 +138,7 @@ export function homeRoutes(
     r.get(`${prefix}/admin/pros/:id/ledger`, async (req) => earnings.earnings(parse(idParam, req.params).id));
     r.post(`${prefix}/admin/pros/:id/payouts`, async (req, reply) => {
       const b = parse(z.object({ amountPaise: z.number().int().positive().max(10_000_000), note: z.string().trim().max(200).optional() }), req.body);
-      return reply.code(201).send({ payout: await earnings.createPayout(req.userId!, parse(idParam, req.params).id, b.amountPaise, b.note) });
+      return reply.code(201).send({ payout: await earnings.createPayout(req.adminId!, parse(idParam, req.params).id, b.amountPaise, b.note) });
     });
     r.post(`${prefix}/admin/payouts/:id/paid`, async (req) => {
       const { utr } = parse(z.object({ utr: z.string().trim().min(6).max(40) }), req.body);
@@ -146,7 +150,7 @@ export function homeRoutes(
     });
     r.post(`${prefix}/admin/pros/:id/adjustments`, async (req) => {
       const b = parse(z.object({ amountPaise: z.number().int().min(-10_000_000).max(10_000_000).refine((n) => n !== 0, "Amount can't be zero"), note: z.string().trim().min(3).max(200) }), req.body);
-      return { balancePaise: await earnings.adjust(req.userId!, parse(idParam, req.params).id, b.amountPaise, b.note) };
+      return { balancePaise: await earnings.adjust(req.adminId!, parse(idParam, req.params).id, b.amountPaise, b.note) };
     });
     r.get(`${prefix}/admin/services`, async () => ({ services: await svc.adminServices() }));
     r.patch(`${prefix}/admin/services/:id`, async (req) => {

@@ -11,7 +11,7 @@ import { seedHomeCatalog } from "../src/modules/home/seed";
 export async function setupTestApp(env: Record<string, string> = {}, opts: { now?: () => Date; payoutProvider?: PayoutProvider } = {}) {
   const url = process.env.TEST_DATABASE_URL ?? "postgres://zarva:zarva@localhost:5432/zarva_test";
   const { db, sql } = createDb(url);
-  await sql`truncate notifications, home_payout_events, home_pro_ledger, home_payouts, home_pro_documents, admin_unlocks, home_booking_events, home_booking_items, home_bookings, home_pros, payment_events, payments, addresses, sessions, otp_challenges, users restart identity cascade`;
+  await sql`truncate notifications, home_payout_events, home_pro_ledger, home_payouts, home_pro_documents, admin_sessions, admin_accounts, home_booking_events, home_booking_items, home_bookings, home_pros, payment_events, payments, addresses, sessions, otp_challenges, users restart identity cascade`;
   await seedHomeCatalog(db);
   await sql`update home_categories set commission_bps = 2000`;
   const config = loadConfig({ NODE_ENV: "test", DATABASE_URL: url, JWT_SECRET: "test-secret-test-secret-test-secret-123", ...env });
@@ -39,13 +39,25 @@ export async function setupTestApp(env: Record<string, string> = {}, opts: { now
       await app.close();
       await sql.end();
     },
-    async login(phone = "9876543210") {
+    /** Customer app sign-in (or partner app with portal "partner"). */
+    async login(phone = "9876543210", portal: "customer" | "partner" = "customer") {
       await app.inject({ method: "POST", url: "/v1/auth/otp/request", payload: { phone } });
       const code = otp.last.get(phoneSchema.parse(phone))!;
-      const res = await app.inject({ method: "POST", url: "/v1/auth/otp/verify", payload: { phone, code } });
+      const res = await app.inject({ method: "POST", url: "/v1/auth/otp/verify", payload: { phone, code, portal } });
       const body = res.json();
       return { ...body, headers: { authorization: `Bearer ${body.accessToken}` } } as {
         accessToken: string; refreshToken: string; user: { id: string }; isNewUser: boolean; headers: Record<string, string>;
+      };
+    },
+    /** A ZARVA admin login (no authenticator: tests run with dev shortcuts). Created on first use. */
+    async loginAdmin(username = "ops") {
+      const exists = (await app.services.admins.list()).some((a) => a.username === username);
+      if (!exists) await app.services.admins.create(null, { username, name: "Ops" }, { password: "test-admin-password", withAuthenticator: false });
+      const res = await app.inject({ method: "POST", url: "/v1/admin/auth/login", payload: { username, password: "test-admin-password" } });
+      if (res.statusCode !== 200) throw new Error(`admin login: ${res.body}`);
+      const body = res.json();
+      return { ...body, headers: { authorization: `Bearer ${body.accessToken}` } } as {
+        accessToken: string; refreshToken: string; admin: { id: string }; headers: Record<string, string>;
       };
     },
   };

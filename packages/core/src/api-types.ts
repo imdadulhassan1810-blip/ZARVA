@@ -47,3 +47,27 @@ export interface AuthProviders {
 }
 
 export type LoginResult = AuthTokens & { user: PublicUser; isNewUser: boolean };
+
+/** A ZARVA team account (admin portal). Never a customer or partner. */
+export interface AdminAccount {
+  id: string;
+  username: string;
+  name: string;
+  status: "active" | "disabled";
+  /** False only for the local demo admin. */
+  hasAuthenticator: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminLoginResult extends AuthTokens {
+  admin: AdminAccount;
+}
+
+/** Shown once when an admin is created: the starting password and the authenticator key. */
+export interface AdminCreated {
+  admin: AdminAccount;
+  password: string;
+  authenticatorKey: string;
+  authenticatorLink: string;
+}

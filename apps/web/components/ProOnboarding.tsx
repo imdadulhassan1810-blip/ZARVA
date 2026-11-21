@@ -1,11 +1,10 @@
 "use client";
-import Link from "next/link";
 import { useState } from "react";
 import {
   homeProDocKinds, homeProDocLabel, homeProIdTypeLabel, homeProIdTypes, homeProRequiredDocs,
   type HomeCategory, type HomePro, type HomeProDocKind, type HomeProIdType,
 } from "@zarva/core";
-import { api } from "../lib/api";
+import { partnerApi as api } from "../lib/api";
 import { prepareUpload } from "../lib/files";
 
 type Step = "details" | "documents" | "payout" | "review";
@@ -79,8 +78,7 @@ function Details({ pro, cats, onSaved }: { pro: HomePro | null; cats: HomeCatego
       try {
         onSaved(pro ? (await api.home.proUpdate(body)).pro : (await api.home.proApply({ ...body, cityId: "durgapur" })).pro);
       } catch (err) {
-        const ex = err as Error & { code?: string };
-        setError(ex.code === "phone_required" ? "Add and verify your mobile number on the Account page first." : ex.message);
+        setError((err as Error).message);
       } finally { setBusy(false); }
     }}>
       <label>Full name (as on your ID)<input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} autoComplete="name" /></label>
@@ -109,7 +107,7 @@ function Details({ pro, cats, onSaved }: { pro: HomePro | null; cats: HomeCatego
           Please upload a <strong>masked Aadhaar</strong> (only the last 4 digits visible). Download it free from myaadhaar.uidai.gov.in → Download Aadhaar → tick “masked Aadhaar”.
         </p>
       )}
-      {error && <p className="error" role="alert">{error} {error.includes("Account page") && <Link href="/account?next=/pro" style={{ textDecoration: "underline" }}>Open Account</Link>}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       <button className="btn" disabled={busy || picked.length === 0 || name.trim().length < 2 || !idType}>{busy ? "Saving…" : "Save and continue"}</button>
     </form>
   );

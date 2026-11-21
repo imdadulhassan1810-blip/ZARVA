@@ -19,6 +19,15 @@
         "backgroundColor": "#0F0B24"
       }
     },
-    "extra": {}
+    "extra": {},
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ZARVA Partner uses your photos to upload your ID proof.",
+          "cameraPermission": "ZARVA Partner uses the camera for your ID proof and selfie."
+        }
+      ]
+    ]
   }
 }

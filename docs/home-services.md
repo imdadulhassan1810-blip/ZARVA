@@ -6,16 +6,18 @@ Urban Company style bookings. Live in **Durgapur** (PIN 713201 to 713216). Asans
 
 Nothing extra to set up. Run `pnpm dev` as in the README. On first start the API loads the Durgapur catalogue and, in the built-in demo database only, 8 demo professionals. Sign-in codes print in the terminal.
 
-Everyone has one ZARVA account (a mobile number, plus email or Google for customers). The website has three doors into it, and each one lands you in that role's own home:
+ZARVA is three separate apps, like Uber's rider and driver apps. Each has its own sign-in, its own screens and its own session, and none shows the others' menus:
 
 | Role | Sign in at | Sign in as | You land on |
 |---|---|---|---|
 | Customer | http://localhost:3000/login | any number, e.g. 98765 43210 | Home page (new accounts first add a name and phone) |
 | Professional | http://localhost:3000/partner/login | 90000 00001 to 90000 00008 (see `seed-data.ts` for who does what) | /pro, the partner app: jobs and earnings |
 | New partner signing up | http://localhost:3000/partner → Start sign-up | any new number, e.g. 90000 00099 | /pro, the 4 sign-up steps |
-| Admin | http://localhost:3000/admin/login | 99999 00000 (local default, no authenticator code needed locally) | /admin |
+| Admin | http://localhost:3000/admin/login | username `admin`, password `zarva-admin-dev` (created on your own computer only, no authenticator code locally) | /admin |
 
-The same person can hold several roles (a pro can also book a service); the header then shows links to their other areas. A number that is not an admin is signed straight out of /admin/login. The roles are checked by the API on every request, so the separate pages are about where people land, not about security.
+On the phone the same split holds: **ZARVA** is the customer app and **ZARVA Partner** is the professional's app (one codebase, two store apps, see `apps/mobile/app.config.js`). In Expo Go the app first asks which one to open.
+
+A professional can also be a customer with the same mobile number. Those are two separate sign-ins: signing in to the partner app never opens the customer app, and the customer app never shows jobs or payouts. Each session is stamped with the app it was opened in (`customer`, `partner` or `admin`), and the API refuses any other app's screens with `403 wrong_portal`.
 
 Payments use the mock provider locally: "Pay now" succeeds instantly. To reload the catalogue after editing prices in `seed-data.ts`, run `pnpm db:seed` (add `-- --demo` for demo pros). To start over, stop the API and delete `apps/api/.data`.
 
@@ -23,22 +25,21 @@ Payments use the mock provider locally: "Pay now" succeeds instantly. To reload 
 
 All checks happen on the API for every request; hiding a button in the app is never the protection.
 
-- **Customer**: anyone signed in. Booking needs a verified mobile number.
-- **Professional**: anyone with a verified mobile can sign up at `/partner`, but sees no jobs and can't act until an admin approves their KYC. Every partner API re-checks "approved, right city, right category, my job".
-- **Admin**: three checks on every admin API call:
-  1. signed in with a live session,
-  2. the account's mobile number is verified by OTP and listed in `ADMIN_PHONES`,
-  3. this session was unlocked with a 6-digit code from an authenticator app (Google/Microsoft Authenticator) in the last 8 hours. 5 wrong codes lock it for 15 minutes; a code can't be reused; logging out ends the unlock.
+- **Customer**: signed in through the customer app. Booking needs a verified mobile number.
+- **Professional**: signed in through the partner app, by mobile number only. Anyone can sign up there, but sees no jobs and can't act until an admin approves their KYC. Every partner API re-checks "approved, right city, right category, my job".
+- **Admin**: a ZARVA-issued account, not anyone's personal number. There is no admin sign-up: accounts are made by an existing admin (Team tab) or with `pnpm admin:create`. Sign-in is username + password + a 6-digit code from an authenticator app (Google/Microsoft Authenticator). 5 wrong tries lock the account for 15 minutes; a code can't be reused; an admin session lasts 12 hours. Disabling an admin or changing a password ends their other sessions.
 
-**Developer shortcuts** (demo admin 99999 00000, demo partners, demo Google button, instant mock payments) exist only on a developer's own machine: when sign-in codes are printed to the terminal instead of sent. As soon as real SMS or email is configured, or `NODE_ENV=production`, they all switch off, and the API refuses to start without a real `JWT_SECRET`, Razorpay, and an authenticator secret for every admin.
+**Developer shortcuts** (demo admin `admin` / `zarva-admin-dev`, demo partners, demo Google button, instant mock payments) exist only on a developer's own machine: when sign-in codes are printed to the terminal instead of sent. As soon as real SMS or email is configured, or `NODE_ENV=production`, they all switch off, and the API refuses to start without a real `JWT_SECRET` and Razorpay. An admin without an authenticator can't sign in.
 
 ### Set up an admin for a real deployment
 
+Create the first admin once, on the server (on Render: **zarva-api → Shell**):
+
 ```
-pnpm admin:2fa 9876543210
+pnpm admin:create ops "Your Name"
 ```
 
-Scan or type the key into Google Authenticator on that admin's phone, then put the two printed lines (`ADMIN_PHONES`, `ADMIN_TOTP_SECRETS`) in the server's settings.
+It prints the username, a start password and an authenticator key. Type or scan the key into Google Authenticator, sign in at `/admin/login`, and change the password under **Team**. Further admins are added from the Team tab; each gets their own start password and key, shown once.
 
 ## How it works
 

@@ -2,22 +2,35 @@ import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { createApiClient, type AuthTokens, type TokenStore } from "@zarva/core";
 
-const KEY = "zarva.tokens";
-let cache: AuthTokens | null = null;
+export type AppMode = "customer" | "partner";
 
-/** Tokens live in the iOS Keychain / Android Keystore; an in-memory copy keeps reads synchronous. */
-const store: TokenStore = {
-  get: () => cache,
-  set(t) {
-    cache = t;
-    void (t ? SecureStore.setItemAsync(KEY, JSON.stringify(t)) : SecureStore.deleteItemAsync(KEY));
-  },
-};
+/**
+ * Tokens live in the iOS Keychain / Android Keystore; an in-memory copy keeps reads synchronous.
+ * The customer app and the partner app keep separate tokens: a partner sign-in never opens the
+ * customer app, and the server refuses the other app's screens.
+ */
+function secureStore(key: string) {
+  let cache: AuthTokens | null = null;
+  const store: TokenStore = {
+    get: () => cache,
+    set(t) {
+      cache = t;
+      void (t ? SecureStore.setItemAsync(key, JSON.stringify(t)) : SecureStore.deleteItemAsync(key));
+    },
+  };
+  const load = async () => {
+    const raw = await SecureStore.getItemAsync(key);
+    cache = raw ? (JSON.parse(raw) as AuthTokens) : null;
+    return cache !== null;
+  };
+  return { store, load };
+}
+const customer = secureStore("zarva.tokens");
+const partner = secureStore("zarva.partner.tokens");
 
-export async function loadTokens(): Promise<boolean> {
-  const raw = await SecureStore.getItemAsync(KEY);
-  cache = raw ? (JSON.parse(raw) as AuthTokens) : null;
-  return cache !== null;
+/** Loads the saved sign-in for this app; true if there is one. */
+export function loadTokens(mode: AppMode = "customer"): Promise<boolean> {
+  return (mode === "partner" ? partner : customer).load();
 }
 
 /**
@@ -31,4 +44,11 @@ function resolveApiUrl(): string {
   return host ? `http://${host}:4000` : "http://localhost:4000";
 }
 const apiUrl = resolveApiUrl();
-export const api = createApiClient(apiUrl, store);
+/** Customer app. */
+export const api = createApiClient(apiUrl, customer.store, undefined, "customer");
+/** Partner app (ZARVA Partner). */
+export const partnerApi = createApiClient(apiUrl, partner.store, undefined, "partner");
+
+/** Which app this build is: fixed in store builds (APP_VARIANT), chosen at launch in development. */
+const configuredMode = (Constants.expoConfig?.extra as { appMode?: unknown } | undefined)?.appMode;
+export const buildMode: AppMode | null = configuredMode === "customer" || configuredMode === "partner" ? configuredMode : null;

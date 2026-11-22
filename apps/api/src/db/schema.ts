@@ -36,6 +36,8 @@ export const users = pgTable("users", {
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   /** Google account id ("sub" claim). Stable even if the person changes their Gmail address. */
   googleSub: text("google_sub").unique(),
+  /** Apple account id ("sub" claim from Sign in with Apple). Stable even if they hide or change their email. */
+  appleSub: text("apple_sub").unique(),
   preferredLanguage: languageEnum("preferred_language").notNull().default("en"),
   /** Opted in to WhatsApp updates (Meta requires opt-in for business-started messages). */
   whatsappOptIn: boolean("whatsapp_opt_in").notNull().default(false),

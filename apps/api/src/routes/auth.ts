@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { AuthProviders } from "@zarva/core";
-import { googleLoginSchema, refreshSchema, requestEmailCodeSchema, requestOtpSchema, verifyEmailCodeSchema, verifyOtpSchema } from "@zarva/core";
+import { appleLoginSchema, googleLoginSchema, refreshSchema, requestEmailCodeSchema, requestOtpSchema, verifyEmailCodeSchema, verifyOtpSchema } from "@zarva/core";
 import { parse } from "../lib/validate";
 
 export async function authRoutes(app: FastifyInstance) {
@@ -18,7 +18,10 @@ export async function authRoutes(app: FastifyInstance) {
   app.get("/v1/auth/providers", async (): Promise<AuthProviders> => {
     const mode = app.services.auth.googleMode;
     const clientId = mode === "live" ? (app.config.GOOGLE_CLIENT_ID.split(",")[0]?.trim() ?? null) : null;
-    return { phone: true, email: true, google: { mode, clientId } };
+    const appleMode = app.services.auth.appleMode;
+    const appleIds = app.config.APPLE_CLIENT_IDS.split(",").map((s) => s.trim()).filter(Boolean);
+    const serviceId = appleMode === "live" ? (app.config.APPLE_WEB_SERVICE_ID.trim() || appleIds[appleIds.length - 1] || null) : null;
+    return { phone: true, email: true, google: { mode, clientId }, apple: { mode: appleMode, serviceId } };
   });
 
   app.post("/v1/auth/email/request", async (req) => {
@@ -35,6 +38,11 @@ export async function authRoutes(app: FastifyInstance) {
   app.post("/v1/auth/google", async (req) => {
     const { idToken, deviceName } = parse(googleLoginSchema, req.body);
     return app.services.auth.loginWithGoogle(idToken, deviceName ?? req.headers["user-agent"]?.slice(0, 80));
+  });
+
+  app.post("/v1/auth/apple", async (req) => {
+    const { identityToken, name, deviceName } = parse(appleLoginSchema, req.body);
+    return app.services.auth.loginWithApple(identityToken, name, deviceName ?? req.headers["user-agent"]?.slice(0, 80));
   });
 
   app.post("/v1/auth/refresh", async (req) => {

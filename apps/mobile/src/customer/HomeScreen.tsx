@@ -6,7 +6,7 @@ import { setStatusBarStyle } from "expo-status-bar";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { verticalIds, verticals } from "@zarva/brand";
 import { formatRupees, type HomeService } from "@zarva/core";
-import { Glow } from "../AuthScreen";
+import { Glow } from "../Glow";
 import {
   Card, ConfirmSheet, EmptyState, ErrorBanner, haptic, IconTile, Ionicons, SectionTitle, Sheet, Skeleton, type IconName,
 } from "../ui";

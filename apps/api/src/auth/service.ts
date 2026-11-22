@@ -5,6 +5,7 @@ import { otpChallenges, sessions, users } from "../db/schema";
 import { AppError, badRequest, tooMany, unauthorized, pgErrorCode } from "../lib/errors";
 import type { EmailSender } from "./email-sender";
 import type { GoogleVerifier } from "./google";
+import type { AppleVerifier } from "./apple";
 import type { OtpSender } from "./otp-sender";
 import {
   type Portal, ACCESS_TTL_SECONDS, REFRESH_TTL_DAYS, generateOtp, hashOtp, newRefreshToken, sha256, signAccessToken,
@@ -28,6 +29,7 @@ export function toPublicUser(u: UserRow): PublicUser {
     name: u.name,
     email: u.email,
     hasGoogle: u.googleSub !== null,
+    hasApple: u.appleSub !== null,
     preferredLanguage: u.preferredLanguage,
     whatsappOptIn: u.whatsappOptIn,
     createdAt: u.createdAt.toISOString(),
@@ -40,6 +42,8 @@ export interface AuthDeps {
   sms: OtpSender;
   email: EmailSender;
   google: GoogleVerifier | null;
+  /** Optional so older callers and tests keep working; null or missing means Apple sign-in is off. */
+  apple?: AppleVerifier | null;
   now?: () => Date;
   /** Abuse limits on sending codes. Every text costs money, so these cap the bill. */
   limits?: Partial<CodeLimits>;
@@ -54,7 +58,7 @@ export interface CodeLimits {
 export const DEFAULT_CODE_LIMITS: CodeLimits = { perIpPerHour: 20, smsPerHour: 500 };
 
 /**
- * Three ways in: phone OTP, email code, Google. They all land on the same users table.
+ * Four ways in: phone OTP, email code, Google, Apple. They all land on the same users table.
  * A phone or email is stored on a user only after it is verified, so "the user with this
  * phone/email" is always unambiguous and accounts can't be hijacked by typing someone else's.
  */
@@ -72,6 +76,10 @@ export class AuthService {
 
   get googleMode(): "live" | "mock" | "off" {
     return this.deps.google?.mode ?? "off";
+  }
+
+  get appleMode(): "live" | "mock" | "off" {
+    return this.deps.apple?.mode ?? "off";
   }
 
   private column(t: CodeTarget) {
@@ -185,32 +193,52 @@ export class AuthService {
 
   /**
    * Google: find by Google id; else link to the account that already owns this verified email;
-   * else create a new account.
+   * else create a new account. Customer app only: partners sign in with their mobile number.
    */
   async loginWithGoogle(idToken: string, deviceName?: string): Promise<LoginResult> {
     if (!this.deps.google) throw new AppError(404, "google_disabled", "Google sign-in is not enabled");
     const g = await this.deps.google.verify(idToken);
-    const email = g.email && g.emailVerified ? g.email : null;
+    return this.loginWithIdentity("google", g.sub, g.email && g.emailVerified ? g.email : null, g.name, deviceName);
+  }
+
+  /**
+   * Apple: same rules as Google. Apple sends the name only to the app, and only the first time,
+   * so the app passes it along; it is used only when the account is created.
+   */
+  async loginWithApple(identityToken: string, name?: string, deviceName?: string): Promise<LoginResult> {
+    if (!this.deps.apple) throw new AppError(404, "apple_disabled", "Apple sign-in is not enabled");
+    const a = await this.deps.apple.verify(identityToken);
+    return this.loginWithIdentity("apple", a.sub, a.email && a.emailVerified ? a.email : null, name?.trim() || null, deviceName);
+  }
+
+  private async loginWithIdentity(
+    provider: "google" | "apple", sub: string, email: string | null, name: string | null, deviceName?: string,
+  ): Promise<LoginResult> {
+    const col = provider === "google" ? users.googleSub : users.appleSub;
+    const key = provider === "google" ? "googleSub" : "appleSub";
     const now = this.now();
 
-    let user = await this.db.query.users.findFirst({ where: eq(users.googleSub, g.sub) });
+    let user = await this.db.query.users.findFirst({ where: eq(col, sub) });
     let isNew = false;
     if (!user && email) {
       const byEmail = await this.db.query.users.findFirst({ where: eq(users.email, email) });
-      if (byEmail) {
-        [user] = await this.db.update(users).set({ googleSub: g.sub, updatedAt: now }).where(eq(users.id, byEmail.id)).returning();
+      // Link only if that account has no other id from this provider (never overwrite one).
+      if (byEmail && byEmail[key] === null) {
+        [user] = await this.db.update(users).set({ [key]: sub, updatedAt: now }).where(eq(users.id, byEmail.id)).returning();
+      } else if (byEmail) {
+        throw new AppError(409, "email_in_use", "This email belongs to another ZARVA account. Sign in with your mobile number or email code instead.");
       }
     }
     if (!user) {
       const inserted = await this.db
         .insert(users)
-        .values({ googleSub: g.sub, email, emailVerifiedAt: email ? now : null, name: g.name })
+        .values({ [key]: sub, email, emailVerifiedAt: email ? now : null, name })
         .onConflictDoNothing()
         .returning();
-      user = inserted[0] ?? (await this.db.query.users.findFirst({ where: eq(users.googleSub, g.sub) }));
+      user = inserted[0] ?? (await this.db.query.users.findFirst({ where: eq(col, sub) }));
       isNew = inserted.length > 0;
     }
-    if (!user) throw new AppError(500, "internal", "User not found after Google sign-in");
+    if (!user) throw new AppError(500, "internal", `User not found after ${provider} sign-in`);
     return this.finishLogin(user, isNew, deviceName);
   }
 

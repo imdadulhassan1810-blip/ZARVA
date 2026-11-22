@@ -16,7 +16,7 @@ type Portal = (typeof PORTALS)[number];
 
 /** The only API sign-in endpoints each app may call through here. */
 const LOGIN_PATHS: Record<Portal, string[]> = {
-  customer: ["/v1/auth/otp/verify", "/v1/auth/email/verify", "/v1/auth/google"],
+  customer: ["/v1/auth/otp/verify", "/v1/auth/email/verify", "/v1/auth/google", "/v1/auth/apple"],
   partner: ["/v1/auth/otp/verify"],
   admin: ["/v1/admin/auth/login"],
 };

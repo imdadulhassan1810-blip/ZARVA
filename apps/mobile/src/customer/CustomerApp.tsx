@@ -5,7 +5,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import type { PublicUser } from "@zarva/core";
 import { api, loadTokens } from "../api";
-import { AuthScreen } from "../AuthScreen";
+import { LaunchScreen, type LaunchView } from "../LaunchScreen";
 import { navTheme, stackOptions, tabListeners, tabOptions } from "../nav";
 import type { Theme } from "../theme";
 import { Loading } from "../ui";
@@ -45,7 +45,14 @@ export function useSession(): Session {
   return s;
 }
 
-export function CustomerApp({ t, onSwitchApp }: { t: Theme; onSwitchApp?: () => void }) {
+export function CustomerApp({ t, onSwitchApp, onOtherApp, initialView }: {
+  t: Theme;
+  /** Development only: the "open ZARVA Partner" row on the Account tab. */
+  onSwitchApp?: () => void;
+  /** Development only: the sign-in screen's "Partner sign up" opens the partner app in place. */
+  onOtherApp?: (view: LaunchView) => void;
+  initialView?: LaunchView;
+}) {
   const [state, setState] = useState<"loading" | "login" | "in">("loading");
   const [user, setUser] = useState<PublicUser | null>(null);
   useEffect(() => { void loadTokens("customer").then((ok) => setState(ok ? "in" : "login")); }, []);
@@ -61,21 +68,7 @@ export function CustomerApp({ t, onSwitchApp }: { t: Theme; onSwitchApp?: () => 
 
   if (state === "loading") return <View style={{ flex: 1, backgroundColor: t.bg }}><Loading /></View>;
   if (state === "login") {
-    return (
-      <AuthScreen
-        t={t}
-        title="Home services you can trust"
-        subtitle="Electricians, plumbers, AC repair, cleaning and salon at home in Durgapur."
-        perks={[
-          { icon: "shield-checkmark", text: "Verified professionals" },
-          { icon: "pricetag", text: "Fixed prices, shown before you book" },
-          { icon: "time", text: "Slots from 8 AM to 8 PM" },
-        ]}
-        onPhone={{ send: (p) => api.requestOtp(p), verify: async (p, c) => { await api.verifyOtp(p, c); setState("in"); } }}
-        email={{ send: (e) => api.requestEmailCode(e), verify: async (e, c) => { await api.verifyEmailCode(e, c); setState("in"); } }}
-        devSwitch={onSwitchApp ? { label: "Development: open ZARVA Partner", onPress: onSwitchApp } : undefined}
-      />
-    );
+    return <LaunchScreen t={t} app="customer" client={api} initialView={initialView} onSignedIn={() => setState("in")} onOtherApp={onOtherApp} />;
   }
 
   return (

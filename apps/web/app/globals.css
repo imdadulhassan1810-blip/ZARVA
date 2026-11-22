@@ -355,6 +355,50 @@ input:focus-visible, select:focus-visible, .btn:focus-visible { outline: 2px sol
   .lp-cat, .lp-svc, .lp-partner { transition: none; }
 }
 
+/* ---------- Launch sign-in (/login): animated logo, then every way in ---------- */
+.launch {
+  position: relative; overflow: hidden; isolation: isolate;
+  max-width: 460px; margin: 8px auto 32px; padding: 44px 20px 28px; border-radius: 28px;
+  background: #0F0B24; color: #F6F5FB;
+  display: flex; flex-direction: column; align-items: center; gap: 28px;
+}
+.launch-glow { position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(260px 220px at 0% 0%, rgba(157,130,255,.22), transparent 70%),
+    radial-gradient(320px 260px at 100% 100%, rgba(255,197,77,.16), transparent 70%); }
+.intro { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px; }
+.intro-mark { animation: intro-pop .6s cubic-bezier(.34,1.56,.64,1) both; }
+.intro-word { overflow: visible; margin-top: 4px; }
+.intro-letter { transform-box: fill-box; transform-origin: center; animation: intro-letter .45s cubic-bezier(.22,1,.36,1) both; }
+.intro-caption { margin: 0; color: #B9B4D6; font-weight: 500; font-size: 15px; letter-spacing: .02em; animation: intro-fade .5s ease-out 1.35s both; }
+/* The card starts with only the logo (centred), then opens to make room for the options. */
+.launch-reveal { width: 100%; display: grid; grid-template-rows: 0fr; margin-top: -28px; animation: intro-open .6s cubic-bezier(.65,0,.35,1) 1.75s both; }
+.launch-reveal > .launch-actions { min-height: 0; overflow: hidden; }
+.launch-actions { width: 100%; display: flex; flex-direction: column; gap: 16px; animation: intro-rise .5s ease-out 1.9s both; }
+@keyframes intro-open { from { grid-template-rows: 0fr; margin-top: -28px; } to { grid-template-rows: 1fr; margin-top: 0; } }
+@keyframes intro-pop { 0% { opacity: 0; transform: scale(.3); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes intro-letter { 0% { opacity: 0; transform: translateX(28px); } 100% { opacity: 1; transform: translateX(0); } }
+@keyframes intro-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes intro-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .intro-mark, .intro-letter, .intro-caption, .launch-actions { animation: none; }
+  .launch-reveal { animation: none; grid-template-rows: 1fr; margin-top: 0; }
+}
+.launch .btn { width: 100%; }
+.launch-btn, .launch .btn-google { background: #fff; color: #0F0B24; border: 0; font-weight: 600; }
+.launch-btn:hover, .launch .btn-google:hover { background: #F1EFF9; }
+.launch-divider { display: flex; align-items: center; gap: 12px; color: #8E88B0; font-size: 13px; margin-top: 4px; }
+.launch-divider::before, .launch-divider::after { content: ""; flex: 1; height: 1px; background: rgba(246,245,251,.14); }
+.launch-signup { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn-partner { background: linear-gradient(135deg, #FFC54D, #F09A12); color: #0F0B24; }
+.launch-fine { margin: 0; text-align: center; color: #8E88B0; font-size: 12px; }
+.launch-panel { background: var(--z-surface); color: var(--z-text); border-radius: 20px; padding: 18px; text-align: left; }
+.launch-h { margin: 0; font-size: 18px; }
+.launch-back { align-self: flex-start; background: none; border: 0; padding: 0; color: var(--z-primary); font: inherit; font-weight: 600; cursor: pointer; }
+.launch .stack.card { background: var(--z-surface); color: var(--z-text); }
+@media (max-width: 380px) { .launch-signup { grid-template-columns: 1fr; } }
+.launch-signup .btn { padding: 0 10px; white-space: nowrap; }
+
 /* ---------- Ratings and reviews ---------- */
 .stars { position: relative; display: inline-block; line-height: 1; letter-spacing: 2px; white-space: nowrap; }
 .stars-bg { color: var(--z-border); }

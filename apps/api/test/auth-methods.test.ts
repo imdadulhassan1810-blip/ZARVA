@@ -26,7 +26,7 @@ async function googleLogin(email: string, name = "Imdad") {
 describe("providers", () => {
   it("advertises demo Google in development/test without keys", async () => {
     const r = (await t.app.inject({ method: "GET", url: "/v1/auth/providers" })).json();
-    expect(r).toEqual({ phone: true, email: true, google: { mode: "mock", clientId: null } });
+    expect(r).toEqual({ phone: true, email: true, google: { mode: "mock", clientId: null }, apple: { mode: "mock", serviceId: null } });
   });
   it("advertises live Google with the client id when configured", async () => {
     await t.close();

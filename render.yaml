@@ -49,6 +49,10 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
+      - key: APPLE_CLIENT_IDS
+        sync: false
+      - key: APPLE_WEB_SERVICE_ID
+        sync: false
       - key: PAYMENT_PROVIDER
         value: razorpay
       - key: RAZORPAY_KEY_ID

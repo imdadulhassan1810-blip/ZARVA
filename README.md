@@ -106,7 +106,7 @@ Free, about 10 minutes, and needs a Google account:
    and restart `pnpm dev`. The demo button becomes the real Google button.
 6. Before launch, click **Publish app** on the consent screen so anyone can sign in.
 
-Google sign-in on the **mobile app** needs a custom Expo development build (it doesn't work inside Expo Go). Mobile users can sign in with phone or email meanwhile.
+Google sign-in on the **mobile app** needs a store or development build (it doesn't work inside Expo Go, which shows the demo button instead). Apple sign-in and the phone app's Google client ids: see [docs/sign-in-setup.md](docs/sign-in-setup.md).
 
 ## API (v1)
 

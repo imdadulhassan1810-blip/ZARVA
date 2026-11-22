@@ -1,12 +1,13 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { formatPhone, formatRupees, type HomeBooking, type HomeCategory, type HomeEarnings, type HomePro } from "@zarva/core";
+import { formatPhone, formatRupees, type HomeBooking, type HomeCategory, type HomeEarnings, type HomePro, type HomeRatingSummary, type HomeReview } from "@zarva/core";
 import { StatusChip, itemsLine, when } from "../../components/BookingBits";
 import { BalanceCard, LedgerList, PayoutChip } from "../../components/Ledger";
 import { Payout, ProOnboarding } from "../../components/ProOnboarding";
 import { isSignedIn, partnerApi as api } from "../../lib/api";
 import { areaLogin, loginUrl, signOut } from "../../lib/roles";
+import { ReviewCard, StarBars, Stars } from "../../components/Reviews";
 
 /** Service professional's screen. Built mobile-first: pros use it on their phone between jobs. */
 export default function Pro() {
@@ -179,6 +180,8 @@ function Profile({ pro, cats, onPro, onSignOut }: { pro: HomePro; cats: HomeCate
         <div className="sum-row"><span className="muted">Area</span><span>{pro.locality ?? "Durgapur"}</span></div>
         <div className="sum-row"><span className="muted">Jobs done</span><span>{pro.jobsDone}</span></div>
       </div>
+      <h2 style={{ marginBottom: 0 }}>Your ratings</h2>
+      <ProRatings />
       <h2 style={{ marginBottom: 0 }}>Payout account</h2>
       <div className="card stack">
         <div className="sum-row">
@@ -189,6 +192,27 @@ function Profile({ pro, cats, onPro, onSignOut }: { pro: HomePro; cats: HomeCate
       </div>
       <p className="muted" style={{ margin: 0 }}>To change your work or area, call ZARVA partner support.</p>
       <button className="btn btn-ghost" onClick={onSignOut}>Sign out</button>
+    </div>
+  );
+}
+
+/** What customers said about this pro. Read-only: pros can't reply to or remove reviews. */
+function ProRatings() {
+  const [data, setData] = useState<{ summary: HomeRatingSummary; reviews: HomeReview[] } | null>(null);
+  useEffect(() => { api.home.proReviews().then(setData).catch(() => {}); }, []);
+  if (!data) return <p className="muted">Loading…</p>;
+  if (data.summary.count === 0) return <p className="card muted" style={{ margin: 0 }}>No ratings yet. Customers can rate you after each completed job.</p>;
+  return (
+    <div className="stack">
+      <div className="card rating-overview">
+        <div>
+          <div className="rating-big">{data.summary.average!.toFixed(1)}</div>
+          <Stars value={data.summary.average!} />
+          <div className="muted" style={{ fontSize: 13 }}>{data.summary.count} rating{data.summary.count === 1 ? "" : "s"}</div>
+        </div>
+        <StarBars summary={data.summary} />
+      </div>
+      {data.reviews.map((r) => <ReviewCard key={r.id} r={r} />)}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { gradient, logoRules, verticalIds, verticals, type VerticalId } from "@z
 import { formatRupees, HOME_RULES, type HomeCategory, type HomeService, type ModuleStatus } from "@zarva/core";
 import { api } from "../lib/api";
 import { Logo } from "../components/Logo";
+import { LandingReviews } from "../components/Reviews";
 
 /** Where each built vertical lives on the web. A tile is clickable once its module is on. */
 const routes: Partial<Record<VerticalId, string>> = { home: "/home-services" };
@@ -226,14 +227,8 @@ export default function Home() {
         </ol>
       </section>
 
-      {/* ---------- Reviews placeholder (no fake reviews) ---------- */}
-      <section className="lp-section">
-        <h2>What customers say</h2>
-        <div className="lp-placeholder">
-          <span className="lp-ph-tag">Placeholder</span>
-          <p><strong>Real ratings and reviews will appear here</strong> once Durgapur customers start booking. We won't show made-up reviews.</p>
-        </div>
-      </section>
+      {/* ---------- Reviews: real ones only, from completed jobs ---------- */}
+      <LandingReviews />
 
       {/* ---------- Partner recruiting ---------- */}
       <Link href="/partner" className="lp-partner">
@@ -293,6 +288,7 @@ export default function Home() {
           <Link href="/home-services">All home services</Link>
           <Link href="/home-services/bookings">Your bookings</Link>
           <Link href="/account">Account</Link>
+          <Link href="/help">Help &amp; support</Link>
         </nav>
         <nav aria-label="Professionals">
           <strong>Professionals</strong>

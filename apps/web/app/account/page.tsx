@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { addressInputSchema, formatPhone, type Address, type PublicUser } from "@zarva/core";
@@ -178,6 +179,12 @@ export default function Account() {
         )}
       </div>
       {error && <p className="error" role="alert">{error}</p>}
+
+      <h2>Help</h2>
+      <div className="row">
+        <Link className="btn btn-ghost" href="/help">Help &amp; support</Link>
+        <Link className="btn btn-ghost" href="/help/feedback">Send feedback</Link>
+      </div>
 
       <h2>Session</h2>
       <button className="btn btn-ghost" onClick={async () => { await api.logout(); router.replace("/"); }}>Sign out</button>

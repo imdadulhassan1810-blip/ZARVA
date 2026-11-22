@@ -3,7 +3,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { gradient } from "@zarva/brand";
-import { formatRupees, homeTotals, HOME_RULES, type HomeCategory, type HomeCity, type HomeService } from "@zarva/core";
+import { formatRupees, homeTotals, HOME_RULES, type HomeCategory, type HomeCity, type HomeRatingSummary, type HomeService } from "@zarva/core";
+import { CategoryReviews, RatingBadge } from "../../components/Reviews";
 import { api } from "../../lib/api";
 import { loadCart, saveCart, type Cart } from "../../lib/cart";
 
@@ -15,12 +16,14 @@ export default function HomeServices() {
   const [active, setActive] = useState<string | null>(null);
   const [cart, setCart] = useState<Cart>({ cityId: "durgapur", categoryId: null, items: {} });
   const [error, setError] = useState<string | null>(null);
+  const [ratings, setRatings] = useState<Record<string, HomeRatingSummary>>({});
 
   useEffect(() => {
     const c = loadCart();
     setCart(c);
     setActive(c.categoryId);
     api.home.cities().then((r) => setCities(r.cities)).catch(() => {});
+    api.home.ratingSummary().then((r) => setRatings(r.categories)).catch(() => {});
     api.home
       .catalog(c.cityId)
       .then((r) => {
@@ -83,6 +86,7 @@ export default function HomeServices() {
                 <span className="cat-icon" aria-hidden>{c.icon}</span>
                 <strong>{c.name}</strong>
                 <span className="muted">{c.description}</span>
+                <RatingBadge summary={ratings[c.slug]} compact />
               </button>
             ))}
           </div>
@@ -95,7 +99,7 @@ export default function HomeServices() {
       ) : (
         <>
           <button className="btn btn-ghost" onClick={() => setActive(null)} style={{ marginTop: 16 }}>← All services</button>
-          <h2 style={{ display: "flex", gap: 8, alignItems: "center" }}><span aria-hidden>{cat.icon}</span>{cat.name}</h2>
+          <h2 style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><span aria-hidden>{cat.icon}</span>{cat.name} <RatingBadge summary={ratings[cat.slug]} /></h2>
           <div className="stack">
             {services.filter((s) => s.categoryId === cat.id).map((s) => {
               const qty = cart.items[s.id] ?? 0;
@@ -125,6 +129,7 @@ export default function HomeServices() {
               );
             })}
           </div>
+          <CategoryReviews categorySlug={cat.slug} categoryName={cat.name} />
         </>
       )}
 

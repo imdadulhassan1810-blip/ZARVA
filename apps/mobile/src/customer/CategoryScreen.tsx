@@ -6,6 +6,7 @@ import { Button, ConfirmSheet, EmptyState, haptic, IconTile, Ionicons, SkeletonC
 import { useSession, type CustomerStackParams } from "./CustomerApp";
 import type { Nav } from "./HomeScreen";
 import { useStore } from "./store";
+import { CategoryRatings } from "./HelpScreens";
 
 /** One category's services, each with an ADD stepper, and the cart bar at the bottom. */
 export function CategoryScreen() {
@@ -40,6 +41,7 @@ export function CategoryScreen() {
           : list.length === 0
             ? <EmptyState t={t} icon="construct-outline" title="No services here yet" body="Pull down to refresh." />
             : list.map((s) => <ServiceRow key={s.id} s={s} onChange={change} />)}
+        {cat && <CategoryRatings slug={cat.slug} />}
       </ScrollView>
       <CartBar />
       <ConfirmSheet t={t} visible={pending !== null} onClose={() => setPending(null)}

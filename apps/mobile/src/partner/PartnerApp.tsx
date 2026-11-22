@@ -9,7 +9,8 @@ import {
   formatPhone, formatRupees, HOME_DOC_RULES, homeLedgerLabel, homeProDocLabel, homeProIdTypeLabel, homeProIdTypes, homeProRequiredDocs,
   type HomeBooking, type HomeCategory, type HomeEarnings, type HomePro, type HomeProDocKind, type HomeProIdType,
 } from "@zarva/core";
-import { AuthScreen, Glow } from "../AuthScreen";
+import { Glow } from "../Glow";
+import { LaunchScreen, type LaunchView } from "../LaunchScreen";
 import { partnerApi as api, loadTokens } from "../api";
 import { navTheme, tabListeners, tabOptions } from "../nav";
 import type { Theme } from "../theme";
@@ -23,26 +24,17 @@ import {
  * (Jobs, Earnings, Profile) and nothing from the customer app. One phone number can also have a
  * customer account, but that lives in the ZARVA app, never here.
  */
-export function PartnerApp({ t, onSwitchApp }: { t: Theme; onSwitchApp?: () => void }) {
+export function PartnerApp({ t, onOtherApp, initialView }: {
+  t: Theme;
+  /** Development only: the sign-in screen's "Customer sign up" opens the customer app in place. */
+  onOtherApp?: (view: LaunchView) => void;
+  initialView?: LaunchView;
+}) {
   const [state, setState] = useState<"loading" | "login" | "in">("loading");
   useEffect(() => { void loadTokens("partner").then((ok) => setState(ok ? "in" : "login")); }, []);
   if (state === "loading") return <View style={{ flex: 1, backgroundColor: t.bg }}><Loading /></View>;
   if (state === "login") {
-    return (
-      <AuthScreen
-        t={t}
-        badge="PARTNER"
-        title="Earn with ZARVA"
-        subtitle="Get home-service jobs near you in Durgapur, at fixed prices."
-        perks={[
-          { icon: "briefcase", text: "Jobs near you, you choose which to take" },
-          { icon: "wallet", text: "See every rupee you earn" },
-          { icon: "calendar", text: "Paid every week to UPI or bank" },
-        ]}
-        onPhone={{ send: (p) => api.requestOtp(p), verify: async (p, c) => { await api.verifyOtp(p, c); setState("in"); } }}
-        devSwitch={onSwitchApp ? { label: "Development: open the customer app", onPress: onSwitchApp } : undefined}
-      />
-    );
+    return <LaunchScreen t={t} app="partner" client={api} initialView={initialView} onSignedIn={() => setState("in")} onOtherApp={onOtherApp} />;
   }
   return <PartnerMain t={t} onSignedOut={() => setState("login")} />;
 }

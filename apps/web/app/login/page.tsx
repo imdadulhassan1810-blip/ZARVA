@@ -2,11 +2,11 @@
 import { useRouter } from "next/navigation";
 import { useCallback } from "react";
 import type { LoginResult } from "@zarva/core";
-import { SignIn } from "../../components/SignIn";
+import { LaunchSignIn } from "../../components/LaunchSignIn";
 import { api } from "../../lib/api";
 import { safeNext } from "../../lib/roles";
 
-/** Customer app sign-in. Partners sign in at /partner/login and the ZARVA team at /admin/login: separate apps. */
+/** Customer app sign-in: the animated ZARVA intro and every way in. The homepage (/) stays the public landing page. Partners sign in at /partner/login and the ZARVA team at /admin/login: separate apps. */
 export default function Login() {
   const router = useRouter();
 
@@ -17,5 +17,5 @@ export default function Login() {
     router.replace(incomplete ? `/account?welcome=1${next ? `&next=${encodeURIComponent(next)}` : ""}` : (next ?? "/"));
   }, [router]);
 
-  return <SignIn client={api} title="Sign in or sign up" subtitle="One account for every ZARVA service." onSignedIn={done} />;
+  return <LaunchSignIn client={api} onSignedIn={done} />;
 }

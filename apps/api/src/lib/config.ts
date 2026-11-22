@@ -17,6 +17,14 @@ const envSchema = z.object({
    * demo Google button (no keys needed) and production hides Google sign-in.
    */
   GOOGLE_CLIENT_ID: z.string().default(""),
+  /**
+   * Sign in with Apple audiences, comma-separated: the iOS bundle id (in.zarva.app) and the web
+   * Services ID (e.g. in.zarva.web). The first Services-style id (one that is not the bundle id)
+   * is sent to the website. When empty, development uses a demo Apple button and production hides it.
+   */
+  APPLE_CLIENT_IDS: z.string().default(""),
+  /** The website's Sign in with Apple Services ID (shown to the browser). Defaults to the last APPLE_CLIENT_IDS entry. */
+  APPLE_WEB_SERVICE_ID: z.string().default(""),
   PAYMENT_PROVIDER: z.enum(["mock", "razorpay"]).default("mock"),
   RAZORPAY_KEY_ID: z.string().optional(),
   /**

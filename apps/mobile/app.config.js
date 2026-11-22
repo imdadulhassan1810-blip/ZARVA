@@ -3,7 +3,7 @@
  *   ZARVA          (customers)  default
  *   ZARVA Partner  (service professionals)  APP_VARIANT=partner
  * Each has its own name, store listing, app id and sign-in. In development (Expo Go) the app
- * asks which one to open, so you can try both from one phone.
+ * opens the customer app, and its "Partner sign up" button switches to the partner app in place.
  */
 module.exports = ({ config }) => {
   const variant = process.env.APP_VARIANT; // "customer" | "partner" | undefined (dev: ask)
@@ -22,8 +22,23 @@ module.exports = ({ config }) => {
     name: partner ? "ZARVA Partner" : config.name,
     slug: config.slug,
     scheme: partner ? "zarvapartner" : config.scheme,
-    ios: { ...config.ios, bundleIdentifier: partner ? "in.zarva.partner" : config.ios.bundleIdentifier },
+    // Sign in with Apple is offered in the customer app only (partners sign in with their mobile number).
+    ios: { ...config.ios, bundleIdentifier: partner ? "in.zarva.partner" : config.ios.bundleIdentifier, usesAppleSignIn: !partner },
     android: { ...config.android, package: partner ? "in.zarva.partner" : config.android.package },
-    extra: { ...config.extra, ...(apiUrl ? { apiUrl } : {}), appMode: variant === "partner" || variant === "customer" ? variant : "ask" },
+    plugins: [...(config.plugins ?? []), ...(partner ? [] : ["expo-apple-authentication"])],
+    extra: {
+      ...config.extra,
+      ...(apiUrl ? { apiUrl } : {}),
+      appMode: variant === "partner" || variant === "customer" ? variant : "ask",
+      // Google sign-in for the customer app. Create these in Google Cloud (see docs/sign-in-setup.md)
+      // and add every one of them to the API's GOOGLE_CLIENT_ID list too. Empty = Google is hidden in store builds.
+      googleIosClientId: process.env.GOOGLE_IOS_CLIENT_ID || "",
+      googleAndroidClientId: process.env.GOOGLE_ANDROID_CLIENT_ID || "",
+      googleWebClientId: process.env.GOOGLE_WEB_CLIENT_ID || "",
+      // Where "Partner sign up" in the customer app, and "Customer sign up" in the partner app, send people.
+      // Point these at the store listings once both apps are published.
+      partnerSignupUrl: process.env.PARTNER_SIGNUP_URL || "https://zarva.in/partner/login",
+      customerAppUrl: process.env.CUSTOMER_APP_URL || "https://zarva.in/login",
+    },
   };
 };

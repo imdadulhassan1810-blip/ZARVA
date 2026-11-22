@@ -32,7 +32,7 @@ export function SignIn({
 
   useEffect(() => {
     if (phoneOnly) return;
-    client.providers().then(setProviders).catch(() => setProviders({ phone: true, email: true, google: { mode: "off", clientId: null } }));
+    client.providers().then(setProviders).catch(() => setProviders({ phone: true, email: true, google: { mode: "off", clientId: null }, apple: { mode: "off", serviceId: null } }));
   }, [client, phoneOnly]);
 
   const onGoogle = useCallback(async (idToken: string) => onSignedIn(await client.googleLogin(idToken)), [client, onSignedIn]);

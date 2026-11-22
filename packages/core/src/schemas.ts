@@ -37,6 +37,11 @@ export const emailSchema = z
 export const requestEmailCodeSchema = z.object({ email: emailSchema });
 export const verifyEmailCodeSchema = z.object({ email: emailSchema, code: otpSchema, deviceName: z.string().max(80).optional() });
 export const googleLoginSchema = z.object({ idToken: z.string().min(10).max(4096), deviceName: z.string().max(80).optional() });
+export const appleLoginSchema = z.object({
+  identityToken: z.string().min(10).max(4096),
+  name: z.string().trim().max(80).optional(),
+  deviceName: z.string().max(80).optional(),
+});
 /** Adding a phone or email to a signed-in account. */
 export const linkPhoneRequestSchema = z.object({ phone: phoneSchema });
 export const linkPhoneVerifySchema = z.object({ phone: phoneSchema, code: otpSchema });

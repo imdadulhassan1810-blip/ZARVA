@@ -113,6 +113,8 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
     requestEmailCode: (email: string) => raw<{ sent: true; retryAfter: number }>("POST", "/v1/auth/email/request", { email }, false),
     verifyEmailCode: (email: string, code: string) => login("/v1/auth/email/verify", { email, code }),
     googleLogin: (idToken: string) => login("/v1/auth/google", { idToken }),
+    /** name: Apple gives it to the app only on the first sign-in, so pass it along when present. */
+    appleLogin: (identityToken: string, name?: string) => login("/v1/auth/apple", { identityToken, ...(name ? { name } : {}) }),
     requestPhoneLink: (phone: string) => call<{ sent: true; retryAfter: number }>("POST", "/v1/me/phone/request", { phone }),
     verifyPhoneLink: (phone: string, code: string) => call<{ user: PublicUser }>("POST", "/v1/me/phone/verify", { phone, code }),
     requestEmailLink: (email: string) => call<{ sent: true; retryAfter: number }>("POST", "/v1/me/email/request", { email }),

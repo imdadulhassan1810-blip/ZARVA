@@ -6,6 +6,8 @@ export interface PublicUser {
   /** Verified email, or null. */
   email: string | null;
   hasGoogle: boolean;
+  /** Signed in with Apple at least once. */
+  hasApple: boolean;
   preferredLanguage: "en" | "hi" | "bn";
   /** Wants booking updates on WhatsApp too (SMS is always sent). */
   whatsappOptIn: boolean;
@@ -44,6 +46,8 @@ export interface AuthProviders {
   email: true;
   /** live: real Google button. mock: demo button that needs no Google keys (development only). off: hidden. */
   google: { mode: "live" | "mock" | "off"; clientId: string | null };
+  /** Same modes as Google. serviceId is the website's Sign in with Apple Services ID (live only). */
+  apple: { mode: "live" | "mock" | "off"; serviceId: string | null };
 }
 
 export type LoginResult = AuthTokens & { user: PublicUser; isNewUser: boolean };

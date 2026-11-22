@@ -7,6 +7,7 @@ import { AuthService } from "./auth/service";
 import type { OtpSender } from "./auth/otp-sender";
 import { ConsoleEmailSender, type EmailSender } from "./auth/email-sender";
 import { LiveGoogleVerifier, MockGoogleVerifier, type GoogleVerifier } from "./auth/google";
+import { LiveAppleVerifier, MockAppleVerifier, type AppleVerifier } from "./auth/apple";
 import { verifyAccessToken } from "./auth/tokens";
 import type { Db } from "./db/client";
 import { AppError, unauthorized } from "./lib/errors";
@@ -61,6 +62,8 @@ export interface AppDeps {
   emailSender?: EmailSender;
   /** Defaults from config: live with GOOGLE_CLIENT_ID, demo in development without it, off in production without it. */
   googleVerifier?: GoogleVerifier | null;
+  /** Same rules as Google, from APPLE_CLIENT_IDS. */
+  appleVerifier?: AppleVerifier | null;
   paymentProvider: PaymentProvider;
   /** Defaults from SMS_PROVIDER / WHATSAPP_PROVIDER. */
   notifyChannels?: Partial<Record<NotifyChannel, MessageChannel>>;
@@ -101,12 +104,22 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         : deps.config.devShortcuts
           ? new MockGoogleVerifier()
           : null;
+  const appleIds = deps.config.APPLE_CLIENT_IDS.split(",").map((s) => s.trim()).filter(Boolean);
+  const apple =
+    deps.appleVerifier !== undefined
+      ? deps.appleVerifier
+      : appleIds.length > 0
+        ? new LiveAppleVerifier(appleIds)
+        : deps.config.devShortcuts
+          ? new MockAppleVerifier()
+          : null;
   const auth = new AuthService({
     db: deps.db,
     secret: deps.config.JWT_SECRET,
     sms: deps.otpSender,
     email: deps.emailSender ?? new ConsoleEmailSender(),
     google,
+    apple,
     now: deps.now,
     limits: { perIpPerHour: deps.config.CODE_LIMIT_PER_IP_PER_HOUR, smsPerHour: deps.config.SMS_CODE_LIMIT_PER_HOUR },
   });

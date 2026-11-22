@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
-  addressInputSchema, formatNotice, formatRupees, HOME_RULES, type Address, type HomeSlotDay,
+  addressInputSchema, formatNotice, formatRupees, homeBillLines, HOME_RULES, type Address, type HomeSlotDay,
 } from "@zarva/core";
 import { api } from "../api";
 import {
@@ -19,7 +19,7 @@ const slotLabel = (iso: string) =>
 export function CheckoutScreen() {
   const { t } = useSession();
   const nav = useNavigation<Nav>();
-  const { cart, lines, totals, count, setQty, clearCart, onlinePayment, policy } = useStore();
+  const { cart, lines, totals, count, setQty, clearCart, onlinePayment, policy, priceOf } = useStore();
   const [addresses, setAddresses] = useState<Address[] | null>(null);
   const [addressId, setAddressId] = useState<string | null>(null);
   const [days, setDays] = useState<HomeSlotDay[] | null>(null);
@@ -99,7 +99,7 @@ export function CheckoutScreen() {
             <View key={l.s.id} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: t.text, fontWeight: "600" }}>{l.s.name}</Text>
-                <Text style={{ color: t.muted, fontSize: 13 }}>{formatRupees(l.s.pricePaise * l.qty)}</Text>
+                <Text style={{ color: t.muted, fontSize: 13 }}>{formatRupees(priceOf(l.s) * l.qty)}</Text>
               </View>
               <Stepper t={t} qty={l.qty} max={HOME_RULES.maxQtyPerItem} onChange={(q) => setQty(l.s, q)} />
             </View>
@@ -131,15 +131,14 @@ export function CheckoutScreen() {
 
         <Text style={{ color: t.text, fontSize: 17, fontWeight: "800", marginTop: 4 }}>Bill summary</Text>
         <Card t={t} style={{ gap: 8 }}>
-          <Row t={t} label="Item total" value={formatRupees(totals.subtotalPaise)} />
-          <Row t={t} label="Convenience fee" value={totals.feePaise > 0 ? formatRupees(totals.feePaise) : "Free"} />
+          {homeBillLines(totals).map((l) => <Row key={l.key} t={t} label={l.label} value={formatRupees(l.paise)} />)}
           <View style={{ height: 1, backgroundColor: t.border, marginVertical: 4 }} />
           <Row t={t} label="To pay" value={formatRupees(totals.totalPaise)} bold />
         </Card>
         <View style={{ flexDirection: "row", gap: 8, alignItems: "center", paddingHorizontal: 4 }}>
           <Ionicons name="shield-checkmark" size={16} color={t.success} />
           <Text style={{ color: t.muted, fontSize: 13, flex: 1 }}>
-            Free reschedule, and cancel with a refund, until {formatNotice(policy.customerCutoffMinutes)} before your slot. The earlier you cancel, the more you get back (up to 100% of the service price). The convenience fee isn&apos;t refunded.
+            Free reschedule, and cancel with a refund, until {formatNotice(policy.customerCutoffMinutes)} before your slot. The earlier you cancel, the more you get back (up to 100% of the service price). The service and platform charges and the GST on them aren&apos;t refunded.
           </Text>
         </View>
         {error && <ErrorBanner t={t} message={error} />}

@@ -41,10 +41,17 @@ export interface InvoiceData {
   sac: { code: string; label: string } | null;
   professional: string | null;
   lines: { name: string; qty: number; unitPaise: number; amountPaise: number }[];
+  /** Legacy convenience fee (bookings before pre-GST prices). New bills use `charges`. */
   feePaise: number;
+  /** Service and platform charges, before GST. Missing on bills issued before 2026-11-22. */
+  charges?: { label: string; amountPaise: number }[];
+  /** GST charged on the bill (base + charges), shown as one line on a receipt when there is no GSTIN. */
+  gstPaise?: number;
   totalPaise: number;
-  /** Only on a tax invoice. Prices include GST, so these are worked back from the total. */
+  /** Only on a tax invoice: the taxable value and the GST split into CGST/SGST or IGST. */
   tax: { rateBps: number; taxablePaise: number; cgstPaise: number; sgstPaise: number; igstPaise: number } | null;
+  /** Legacy bills: prices included GST and the tax was worked back from the total. */
+  taxInclusive?: boolean;
   paidVia: string;
 }
 
@@ -80,14 +87,23 @@ export class InvoiceService {
     const a = b.address as HomeAddressSnapshot;
     const gstin = this.config.INVOICE_GSTIN ?? null;
     const buyerState = city?.state ?? this.config.INVOICE_STATE;
+    // New bookings: 18% GST on base + service charge + platform charge, frozen in b.pricing.
+    // Legacy bookings: the price included GST, so it is worked back from the total.
+    const p = b.pricing;
+    const taxablePaise = p ? p.taxablePaise : Math.round((b.totalPaise * 10_000) / (10_000 + GST_BPS));
+    const gstPaise = p ? p.gstPaise : b.totalPaise - taxablePaise;
     let tax: InvoiceData["tax"] = null;
     if (gstin) {
-      const taxablePaise = Math.round((b.totalPaise * 10_000) / (10_000 + GST_BPS));
-      const gst = b.totalPaise - taxablePaise;
       const intra = buyerState.toLowerCase() === this.config.INVOICE_STATE.toLowerCase();
-      const cgstPaise = intra ? Math.floor(gst / 2) : 0;
-      tax = { rateBps: GST_BPS, taxablePaise, cgstPaise, sgstPaise: intra ? gst - cgstPaise : 0, igstPaise: intra ? 0 : gst };
+      const cgstPaise = intra ? Math.floor(gstPaise / 2) : 0;
+      tax = { rateBps: GST_BPS, taxablePaise, cgstPaise, sgstPaise: intra ? gstPaise - cgstPaise : 0, igstPaise: intra ? 0 : gstPaise };
     }
+    const charges = p
+      ? [
+        { label: `Service charge (${p.serviceChargeBps / 100}% of the service price)`, amountPaise: p.serviceChargePaise },
+        { label: `Platform & maintenance charge (${p.platformChargeBps / 100}% of the service price)`, amountPaise: p.platformChargePaise },
+      ].filter((c) => c.amountPaise > 0)
+      : undefined;
     const data: InvoiceData = {
       number,
       kind: gstin ? "tax_invoice" : "receipt",
@@ -106,7 +122,8 @@ export class InvoiceService {
       lines: items
         .sort((x, y) => x.name.localeCompare(y.name))
         .map((i) => ({ name: i.name, qty: i.qty, unitPaise: i.unitPricePaise, amountPaise: i.unitPricePaise * i.qty })),
-      feePaise: b.feePaise,
+      feePaise: p ? 0 : b.feePaise,
+      ...(charges ? { charges, gstPaise } : { taxInclusive: true }),
       totalPaise: b.totalPaise,
       tax,
       paidVia: b.payMode === "online" ? "Paid online (Razorpay)" : "Paid to the professional after the service (cash / UPI)",
@@ -299,6 +316,11 @@ export async function renderInvoice(d: InvoiceData): Promise<Uint8Array> {
     text(money(d.feePaise), cAmt, y, { right: true });
     y -= 18;
   }
+  for (const c of d.charges ?? []) {
+    text(c.label, M, y);
+    text(money(c.amountPaise), cAmt, y, { right: true });
+    y -= 18;
+  }
   hr(y + 6);
   y -= 12;
 
@@ -316,6 +338,8 @@ export async function renderInvoice(d: InvoiceData): Promise<Uint8Array> {
       total(`CGST ${half}`, money(d.tax.cgstPaise));
       total(`SGST ${half}`, money(d.tax.sgstPaise));
     }
+  } else if (d.gstPaise) {
+    total(`GST ${GST_BPS / 100}%`, money(d.gstPaise));
   }
   y -= 2;
   page.drawLine({ start: { x: cQty - 40, y: y + 14 }, end: { x: W - M, y: y + 14 }, thickness: 0.8, color: LINE });
@@ -325,7 +349,9 @@ export async function renderInvoice(d: InvoiceData): Promise<Uint8Array> {
 
   // Notes.
   const notes = [
-    d.tax ? "Prices include GST. Amounts above are worked out from the GST-inclusive price." : "ZARVA is not GST-registered yet, so this is a bill and payment receipt, not a GST tax invoice.",
+    d.charges
+      ? d.tax ? "GST is charged at 18% on the service price plus the service and platform charges." : "ZARVA's GST registration is pending, so this is a bill and payment receipt, not a GST tax invoice."
+      : d.tax ? "Prices include GST. Amounts above are worked out from the GST-inclusive price." : "ZARVA is not GST-registered yet, so this is a bill and payment receipt, not a GST tax invoice.",
     "Spare parts, if any, are billed separately by the professional at MRP and are not part of this bill.",
     `Questions about this bill? ${d.seller.contact}. Quote booking ${d.bookingCode}.`,
   ];

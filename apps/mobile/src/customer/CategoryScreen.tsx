@@ -55,7 +55,7 @@ export function CategoryScreen() {
 /** A service with price, duration, a "details" sheet and the ADD stepper. */
 export function ServiceRow({ s, onChange }: { s: HomeService; onChange: (s: HomeService, qty: number) => void }) {
   const { t } = useSession();
-  const { cart } = useStore();
+  const { cart, priceOf } = useStore();
   const [open, setOpen] = useState(false);
   const qty = cart.items[s.id] ?? 0;
   return (
@@ -63,7 +63,7 @@ export function ServiceRow({ s, onChange }: { s: HomeService; onChange: (s: Home
       <View style={{ flex: 1, gap: 4 }}>
         <Text style={{ color: t.text, fontWeight: "700", fontSize: 16 }}>{s.name}</Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Text style={{ color: t.text, fontWeight: "800", fontSize: 16 }}>{formatRupees(s.pricePaise)}</Text>
+          <Text style={{ color: t.text, fontWeight: "800", fontSize: 16 }}>{formatRupees(priceOf(s))}</Text>
           <Text style={{ color: t.muted, fontSize: 13 }}>· {s.durationMin} min</Text>
         </View>
         <Text style={{ color: t.muted, fontSize: 13 }} numberOfLines={2}>{s.description}</Text>
@@ -78,7 +78,7 @@ export function ServiceRow({ s, onChange }: { s: HomeService; onChange: (s: Home
       </View>
       <Sheet t={t} visible={open} onClose={() => setOpen(false)} title={s.name}>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 8, gap: 12 }}>
-          <Text style={{ color: t.text, fontSize: 22, fontWeight: "800" }}>{formatRupees(s.pricePaise)} <Text style={{ color: t.muted, fontSize: 15, fontWeight: "500" }}>· {s.durationMin} min</Text></Text>
+          <Text style={{ color: t.text, fontSize: 22, fontWeight: "800" }}>{formatRupees(priceOf(s))} <Text style={{ color: t.muted, fontSize: 15, fontWeight: "500" }}>· {s.durationMin} min</Text></Text>
           <Text style={{ color: t.muted }}>{s.description}</Text>
           {s.inclusions.map((i) => (
             <View key={i} style={{ flexDirection: "row", gap: 10, alignItems: "flex-start" }}>
@@ -109,7 +109,7 @@ export function CartBar({ tabBar }: { tabBar?: boolean }) {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ color: "#fff", fontWeight: "800" }}>{count} item{count > 1 ? "s" : ""} · {formatRupees(totals.totalPaise)}</Text>
-          <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 12 }}>{totals.feePaise > 0 ? `Incl. ${formatRupees(totals.feePaise)} convenience fee` : "No convenience fee"}</Text>
+          <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 12 }}>Incl. service & platform charges and GST</Text>
         </View>
         <Text style={{ color: "#fff", fontWeight: "800" }}>View cart</Text>
         <Ionicons name="chevron-forward" size={18} color="#fff" />

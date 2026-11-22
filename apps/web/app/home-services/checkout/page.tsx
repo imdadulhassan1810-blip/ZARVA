@@ -3,10 +3,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
-  formatPhone, formatRupees, homeTotals, HOME_RULES,
+  DEFAULT_HOME_POLICY, formatPhone, formatRupees, homeTotals, homeUnitPrice, HOME_RULES,
   type Address, type HomePolicy, type HomeService, type HomeSlotDay,
 } from "@zarva/core";
 import { CustomerRules } from "../../../components/CancellationRules";
+import { ChargeLines } from "../../../components/BookingBits";
 import { api, isSignedIn } from "../../../lib/api";
 import { clearCart, loadCart, type Cart } from "../../../lib/cart";
 import { payForBooking } from "../../../lib/pay";
@@ -69,7 +70,8 @@ export default function Checkout() {
     const s = byId.get(id);
     return s ? [{ s, qty, unitPricePaise: s.pricePaise }] : [];
   });
-  const totals = homeTotals(lines);
+  const rates = policy ?? DEFAULT_HOME_POLICY;
+  const totals = homeTotals(lines, rates);
   const noSlots = days.length > 0 && days.every((d) => d.slots.every((s) => !s.available));
 
   async function book() {
@@ -178,10 +180,10 @@ export default function Checkout() {
       <h2>Summary</h2>
       <div className="card stack">
         {lines.map((l) => (
-          <div key={l.s.id} className="sum-row"><span>{l.s.name} × {l.qty}</span><span>{formatRupees(l.s.pricePaise * l.qty)}</span></div>
+          <div key={l.s.id} className="sum-row"><span>{l.s.name} × {l.qty}</span><span>{formatRupees(homeUnitPrice(l.s.pricePaise, rates) * l.qty)}</span></div>
         ))}
-        {totals.feePaise > 0 && <div className="sum-row muted"><span>Convenience fee (orders under {formatRupees(HOME_RULES.freeFeeAbovePaise)})</span><span>{formatRupees(totals.feePaise)}</span></div>}
-        <div className="sum-row total"><span>Total (incl. taxes)</span><span>{formatRupees(totals.totalPaise)}</span></div>
+        <ChargeLines t={totals} />
+        <span className="muted" style={{ fontSize: 13 }}>The service and platform charges and the GST on them are not refunded if you cancel.</span>
       </div>
 
       {error && <p className="error" role="alert">{error}</p>}

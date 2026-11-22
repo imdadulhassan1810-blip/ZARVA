@@ -1,0 +1,1 @@
+ALTER TABLE "home_bookings" ADD COLUMN "pricing" jsonb;

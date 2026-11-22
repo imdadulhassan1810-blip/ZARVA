@@ -161,7 +161,7 @@ export default function Pro() {
         {jobs.available.map((b) => (
           <div key={b.id} className="card stack">
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-              <strong>{when(b)}</strong><strong>{formatRupees(b.totalPaise)}</strong>
+              <strong>{when(b)}</strong><strong title="What you earn">You earn {formatRupees(b.proEarningPaise ?? b.totalPaise)}</strong>
             </div>
             <div>{itemsLine(b)}</div>
             <div className="muted">{[b.address.line2, b.address.landmark, b.address.pincode].filter(Boolean).join(", ")}</div>

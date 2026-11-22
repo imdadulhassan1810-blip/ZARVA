@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Linking, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
-import { formatPhone, formatRupees, homeReviewTagLabel, type HomeBooking, type HomeBookingStatus } from "@zarva/core";
+import { formatPhone, formatRupees, homeBillLines, homeReviewTagLabel, type HomeBooking, type HomeBookingStatus } from "@zarva/core";
 import { api } from "../api";
 import type { Theme } from "../theme";
 import { Button, Card, EmptyState, ErrorBanner, haptic, IconButton, Ionicons, Pill, SkeletonCard, type IconName } from "../ui";
@@ -217,11 +217,11 @@ export function BookingScreen() {
             <Text style={{ color: t.text }}>{formatRupees(i.unitPricePaise * i.qty)}</Text>
           </View>
         ))}
-        {b.feePaise > 0 && (
-          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ color: t.muted }}>Convenience fee</Text><Text style={{ color: t.muted }}>{formatRupees(b.feePaise)}</Text>
+        {homeBillLines(b).filter((l) => l.key !== "items").map((l) => (
+          <View key={l.key} style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <Text style={{ color: l.key === "base" ? t.text : t.muted }}>{l.label}</Text><Text style={{ color: l.key === "base" ? t.text : t.muted }}>{formatRupees(l.paise)}</Text>
           </View>
-        )}
+        ))}
         <View style={{ height: 1, backgroundColor: t.border, marginVertical: 4 }} />
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <Text style={{ color: t.text, fontWeight: "800" }}>Total</Text>

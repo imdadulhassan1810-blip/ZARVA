@@ -278,19 +278,19 @@ describe("partner sign-up and KYC", () => {
 });
 
 describe("pro earnings, commission and payouts", () => {
-  it("online job: pro earns price minus 20% commission; convenience fee stays with ZARVA", async () => {
+  it("online job: pro earns their quote minus 10%; ZARVA keeps that, the 5% markup and the charges", async () => {
     const pro = await approvedPro();
     const cust = await login("9876500001");
-    const { booking, payment } = await book(cust, "online"); // fan repair ₹199 + ₹29 fee
+    const { booking, payment } = await book(cust, "online"); // fan repair quoted ₹199: customer pays ₹268.76, pro earns ₹179.10
     await payWithMock(cust, booking.id, payment!.clientPayload.order_id);
     await doJob(pro.s, booking.id, booking.startCode);
     const e = (await req("GET", `${P}/pro/earnings`, pro.s)).body;
-    expect(e.balancePaise).toBe(19900 - 3980);
-    expect(e.weekPaise).toBe(15920);
-    expect(e.entries[0]).toMatchObject({ kind: "job_earning", grossPaise: 19900, commissionPaise: 3980, bookingCode: booking.code });
+    expect(e.balancePaise).toBe(17910);
+    expect(e.weekPaise).toBe(17910);
+    expect(e.entries[0]).toMatchObject({ kind: "job_earning", grossPaise: 20895, commissionPaise: 20895 - 17910, bookingCode: booking.code });
   });
 
-  it("cash job (only bookings made before prepaid-only): the pro holds the cash, so they owe ZARVA the commission and fee", async () => {
+  it("cash job (only bookings made before prepaid-only): the pro holds the cash, so they owe ZARVA everything above their earning", async () => {
     const pro = await approvedPro();
     const cust = await login("9876500001");
     const { booking } = await book(cust, "paid");
@@ -298,16 +298,16 @@ describe("pro earnings, commission and payouts", () => {
     await t.sql`update home_bookings set pay_mode = 'after_service', paid = false where id = ${booking.id}`;
     await doJob(pro.s, booking.id, booking.startCode);
     const e = (await req("GET", `${P}/pro/earnings`, pro.s)).body;
-    expect(e.balancePaise).toBe(15920 - 22800); // -₹68.80 = commission ₹39.80 + fee ₹29
+    expect(e.balancePaise).toBe(17910 - 26876); // -₹89.66: commission, markup, charges and GST
     expect(e.entries.map((x: { kind: string }) => x.kind).sort()).toEqual(["cash_collected", "job_earning"]);
 
     // Admin records the cash the pro handed over; balance back to zero.
     const admin = await login(ADMIN);
-    const adj = await req("POST", `${P}/admin/pros/${pro.id}/adjustments`, admin, { amountPaise: 6880, note: "Cash dues received" });
+    const adj = await req("POST", `${P}/admin/pros/${pro.id}/adjustments`, admin, { amountPaise: 8966, note: "Cash dues received" });
     expect(adj.body.balancePaise).toBe(0);
   });
 
-  it("commission is set per category by admin", async () => {
+  it("commission is set per category by admin (used only for bookings from before the markup)", async () => {
     const pro = await approvedPro();
     const admin = await login(ADMIN);
     const cats = (await req("GET", `${P}/admin/categories`, admin)).body.categories;
@@ -318,6 +318,8 @@ describe("pro earnings, commission and payouts", () => {
     const cust = await login("9876500001");
     const { booking, payment } = await book(cust, "online");
     await payWithMock(cust, booking.id, payment!.clientPayload.order_id);
+    // As it would be in the database from before: GST-inclusive price, no price breakdown.
+    await t.sql`update home_bookings set pricing = null, subtotal_paise = 19900 where id = ${booking.id}`;
     await doJob(pro.s, booking.id, booking.startCode);
     expect((await req("GET", `${P}/pro/earnings`, pro.s)).body.balancePaise).toBe(19900 - 2985);
   });

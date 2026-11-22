@@ -78,7 +78,7 @@ export default function Admin() {
           <button key={t} role="tab" aria-selected={tab === t} className={`day ${tab === t ? "day-on" : ""}`} onClick={() => setTab(t)}>
             {t === "bookings" ? "Bookings" : t === "support" ? "Support" : t === "reviews" ? "Reviews" : t === "feedback" ? "Feedback"
               : t === "pros" ? `Professionals${pros.some((p) => p.status === "pending") ? ` (${pros.filter((p) => p.status === "pending").length} to review)` : ""}`
-              : t === "payouts" ? `Payouts${balances.payouts.some((p) => p.status === "manual") ? " •" : ""}` : t === "prices" ? "Prices & commission" : t === "rules" ? "Cancellation rules" : "Team"}
+              : t === "payouts" ? `Payouts${balances.payouts.some((p) => p.status === "manual") ? " •" : ""}` : t === "prices" ? "Service prices" : t === "rules" ? "Pricing & cancellation" : "Team"}
           </button>
         ))}
       </div>
@@ -150,7 +150,7 @@ export default function Admin() {
 
       {tab === "prices" && (
         <div className="stack" style={{ marginTop: 12 }}>
-          <p className="muted" style={{ margin: 0 }}>Prices include GST. Commission is ZARVA&apos;s share of the job price (the convenience fee is always ZARVA&apos;s). It applies to jobs completed after you save.</p>
+          <p className="muted" style={{ margin: 0 }}>Each price is the professional&apos;s quote, which is what the professional earns. Customers pay the quote plus the markup, the service and platform charges and GST (set them in Pricing &amp; cancellation). Commission % only applies to bookings made before 22 Nov 2026, when prices included GST.</p>
           {cats.map((c) => {
             const ac = adminCats.find((x) => x.id === c.id);
             const pct = commission[c.id] ?? (ac ? String(ac.commissionBps / 100) : "");

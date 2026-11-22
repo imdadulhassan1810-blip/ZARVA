@@ -30,7 +30,7 @@ export function RulesCard({ t, policy }: { t: Theme; policy: HomePolicy }) {
       <Text style={{ color: t.muted, fontSize: 13 }}>• Reschedule free, up to {policy.maxReschedules} times, until {cutoff} before your slot.</Text>
       <Text style={{ color: t.muted, fontSize: 13 }}>• Cancel until {cutoff} before. Refund of the service price:</Text>
       {refundSlabLines(policy).map((l) => <Text key={l} style={{ color: t.muted, fontSize: 13, paddingLeft: 12 }}>– {l}</Text>)}
-      <Text style={{ color: t.muted, fontSize: 13 }}>• GST is refunded in the same share. The convenience fee is not refunded.</Text>
+      <Text style={{ color: t.muted, fontSize: 13 }}>• GST on the service price is refunded in the same share. The service and platform charges and their GST are not refunded.</Text>
       <Text style={{ color: t.muted, fontSize: 13 }}>• Less than {cutoff} before the slot, no changes are possible.</Text>
     </Card>
   );
@@ -120,9 +120,9 @@ export function BookingChanges({ t, b, policy, onChange }: { t: Theme; b: HomeBo
         <View style={{ padding: 20, gap: 10 }}>
           {q ? (
             <>
-              <Line t={t} label={`Service price (before GST) · ${formatBps(q.refundBps)} back`} value={formatRupees(q.baseRefundPaise)} />
+              <Line t={t} label={`Service price · ${formatBps(q.refundBps)} back`} value={formatRupees(q.baseRefundPaise)} />
               <Line t={t} label={`GST on it · ${formatBps(q.refundBps)} back`} value={formatRupees(q.gstRefundPaise)} />
-              {q.feeKeptPaise > 0 && <Line t={t} label={`Convenience fee ${formatRupees(q.feeKeptPaise)} · not refunded`} value={formatRupees(0)} muted />}
+              {q.feeKeptPaise > 0 && <Line t={t} label={`Service & platform charges + GST ${formatRupees(q.feeKeptPaise)} · not refunded`} value={formatRupees(0)} muted />}
               <View style={{ height: 1, backgroundColor: t.border }} />
               <Line t={t} label="You get back" value={formatRupees(q.refundPaise)} bold />
               <Line t={t} label="Cancellation charge" value={formatRupees(q.chargePaise)} muted />

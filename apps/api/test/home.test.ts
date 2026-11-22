@@ -93,9 +93,9 @@ describe("home services: catalogue", () => {
     expect(asansol.body.error.code).toBe("city_not_live");
   });
 
-  it("totals add a ₹29 fee below ₹299 and none above", () => {
-    expect(homeTotals([{ unitPricePaise: 19900, qty: 1 }])).toEqual({ subtotalPaise: 19900, feePaise: 2900, totalPaise: 22800 });
-    expect(homeTotals([{ unitPricePaise: 19900, qty: 2 }])).toEqual({ subtotalPaise: 39800, feePaise: 0, totalPaise: 39800 });
+  it("totals: quote + 5% markup, then 6% service, 3% platform and 18% GST on all three", () => {
+    expect(homeTotals([{ unitPricePaise: 19900, qty: 1 }])).toMatchObject({ subtotalPaise: 20895, feePaise: 2220, totalPaise: 26876 });
+    expect(homeTotals([{ unitPricePaise: 19900, qty: 2 }])).toMatchObject({ subtotalPaise: 41790, totalPaise: 53750 });
   });
 });
 
@@ -145,10 +145,14 @@ describe("home services: booking", () => {
     const r = await book(s, { services: [["fan-repair", 1], ["fan-installation", 1]] });
     expect(r.status).toBe(201);
     const b: HomeBooking = r.body.booking;
-    expect(b).toMatchObject({ status: "pending_payment", subtotalPaise: 34800, feePaise: 0, totalPaise: 34800, paid: false, categoryName: "Electrician" });
+    const want = homeTotals([{ unitPricePaise: 19900, qty: 1 }, { unitPricePaise: 14900, qty: 1 }]);
+    expect(want.pricing.quotePaise).toBe(34800);
+    expect(b).toMatchObject({ status: "pending_payment", subtotalPaise: want.subtotalPaise, feePaise: want.feePaise, totalPaise: want.totalPaise, pricing: want.pricing, paid: false, categoryName: "Electrician" });
+    // Items carry the customer's price (quote + 5%), so they add up to the service price.
+    expect(b.items.reduce((s, i) => s + i.unitPricePaise * i.qty, 0)).toBe(want.subtotalPaise);
     expect(b.code).toMatch(/^ZH-[2-9A-Z]{6}$/);
     expect(b.startCode).toMatch(/^\d{4}$/);
-    expect(r.body.payment.clientPayload.amount).toBe(34800);
+    expect(r.body.payment.clientPayload.amount).toBe(want.totalPaise);
 
     const done = await payWithMock(s, b.id, r.body.payment.clientPayload.order_id);
     expect(done.body.booking).toMatchObject({ status: "confirmed", paid: true });
@@ -310,7 +314,7 @@ describe("home services: admin", () => {
 
     const cust = await login("9876500001");
     const b = (await book(cust, { paid: true })).body.booking;
-    expect(b.totalPaise).toBe(22900 + 2900);
+    expect(b.totalPaise).toBe(homeTotals([{ unitPricePaise: 22900, qty: 1 }]).totalPaise);
 
     const pros = (await req("GET", `${P}/admin/pros`, admin)).body.pros;
     const as = await req("POST", `${P}/admin/bookings/${b.id}/assign`, admin, { proId: pros[0].id });

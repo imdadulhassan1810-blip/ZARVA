@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
-  bookableSlotStarts, bookingCode, formatDay, formatPhone, formatRupees, formatSlot, HOME_RULES, homeChangeBlockText, homeRefundQuote,
+  bookableSlotStarts, bookingCode, formatDay, formatPhone, formatRupees, formatSlot, HOME_RULES, homeChangeBlockText, homeProEarning, homeRefundQuote, homeUnitPrice,
   homeStatusLabel, homeTotals, istDate, isSlotStart, proNextStatus,
   type HomeAddressSnapshot, type HomeBooking, type HomeBookingStatus, type HomeCancelInfo, type HomeCancellation, type HomeCategory, type HomeCity,
   type HomeCreateBooking, type HomePartnerCancelStats, type HomePolicy, type HomeRefundQuote, type HomeService, type HomeSlotDay,
@@ -156,7 +156,10 @@ export class HomeServicesService {
     const categoryId = svcs[0]!.categoryId;
 
     const lines = svcs.map((s) => ({ serviceId: s.id, name: s.name, unitPricePaise: s.pricePaise, qty: qtyById.get(s.id)! }));
-    const totals = homeTotals(lines);
+    // Catalogue prices are the professional's quote; the customer pays the base price (quote + markup) plus charges and GST.
+    const rates = await this.policy.get();
+    const totals = homeTotals(lines, rates);
+    const itemRows = lines.map((l) => ({ ...l, unitPricePaise: homeUnitPrice(l.unitPricePaise, rates) }));
     if (totals.subtotalPaise < HOME_RULES.minOrderPaise) throw badRequest("below_minimum", "Order is below the minimum");
 
     const slot = new Date(input.slotStart);
@@ -191,7 +194,7 @@ export class HomeServicesService {
           createdAt: this.now(), updatedAt: this.now(),
         })
         .returning();
-      await tx.insert(homeBookingItems).values(lines.map((l) => ({ ...l, bookingId: b!.id })));
+      await tx.insert(homeBookingItems).values(itemRows.map((l) => ({ ...l, bookingId: b!.id })));
       await this.event(tx, b!.id, b!.status, "customer", online ? "Waiting for payment" : "Pay after service");
       if (!online) await this.tellCustomer(tx, b!, "booking_confirmed", { service: svcs[0]!.name + (lines.length > 1 ? ` +${lines.length - 1}` : "") });
       return b!;
@@ -643,6 +646,9 @@ export class HomeServicesService {
       subtotalPaise: b.subtotalPaise,
       feePaise: b.feePaise,
       totalPaise: b.totalPaise,
+      pricing: b.pricing ?? null,
+      // Partners and admins see what the professional earns on the job, not what the customer pays.
+      ...(view !== "customer" ? { proEarningPaise: homeProEarning(b, cat?.commissionBps ?? 2000).earningPaise } : {}),
       payMode: b.payMode,
       paymentId: view === "preview" ? null : b.paymentId,
       paid: b.paid,

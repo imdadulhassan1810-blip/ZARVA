@@ -1,13 +1,14 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { formatPhone, formatRupees, type HomeBooking, type HomeCategory, type HomeEarnings, type HomePro, type HomeRatingSummary, type HomeReview } from "@zarva/core";
+import { formatBps, formatPhone, formatRupees, type HomeBooking, type HomePartnerCancelStats, type HomeCategory, type HomeEarnings, type HomePro, type HomeRatingSummary, type HomeReview } from "@zarva/core";
 import { StatusChip, itemsLine, when } from "../../components/BookingBits";
 import { BalanceCard, LedgerList, PayoutChip } from "../../components/Ledger";
 import { Payout, ProOnboarding } from "../../components/ProOnboarding";
 import { isSignedIn, partnerApi as api } from "../../lib/api";
 import { areaLogin, loginUrl, signOut } from "../../lib/roles";
 import { ReviewCard, StarBars, Stars } from "../../components/Reviews";
+import { PartnerCancelBanner } from "../../components/CancellationRules";
 
 /** Service professional's screen. Built mobile-first: pros use it on their phone between jobs. */
 export default function Pro() {
@@ -19,8 +20,14 @@ export default function Pro() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"jobs" | "earnings" | "profile">("jobs");
+  const [stats, setStats] = useState<HomePartnerCancelStats | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
 
-  const loadJobs = useCallback(async () => setJobs(await api.home.proJobs()), []);
+  const loadJobs = useCallback(async () => {
+    setJobs(await api.home.proJobs());
+    setStats((await api.home.proCancelStats()).cancelStats);
+  }, []);
 
   useEffect(() => {
     if (!isSignedIn("partner")) return router.replace(loginUrl("partner"));
@@ -101,6 +108,7 @@ export default function Pro() {
       {error && <p className="error" role="alert">{error}</p>}
       {tab === "earnings" ? <Earnings /> : tab === "profile" ? <Profile pro={pro} cats={cats} onPro={setPro} onSignOut={out} /> : <>
 
+      {stats && <div style={{ marginTop: 12 }}><PartnerCancelBanner s={stats} /></div>}
       <h2>Your jobs</h2>
       <div className="stack">
         {jobs.mine.length === 0 && <p className="muted">No jobs yet. Accept one below.</p>}
@@ -118,6 +126,31 @@ export default function Pro() {
             {b.customerNote && <div>Note: {b.customerNote}</div>}
             <div className="muted">{b.payMode === "after_service" ? `Collect ${formatRupees(b.totalPaise)}` : "Paid online, collect nothing"}</div>
             {next(b)}
+            {(b.status === "assigned" || b.status === "on_the_way") && stats && (cancelling === b.id ? (
+              <div className="card stack" style={{ borderColor: "var(--z-warning)" }}>
+                <strong>Cancel this job?</strong>
+                <span style={{ fontSize: 14 }}>
+                  It goes back to other partners. This will be cancellation {stats.today + 1} today and {stats.week + 1} this week
+                  (limits: {stats.freePerDay} a day free, {stats.maxPerWeek} a week).
+                  {stats.nextPenaltyBps > 0 && <strong> {formatBps(stats.nextPenaltyBps)} of today's earnings will be deducted from your weekly payout.</strong>}
+                </span>
+                <label>Reason
+                  <input value={cancelReason} maxLength={200} onChange={(e) => setCancelReason(e.target.value)} placeholder="e.g. Bike broke down" />
+                </label>
+                <div className="row">
+                  <button className="btn btn-danger" disabled={busy || cancelReason.trim().length < 3} onClick={() => run(async () => {
+                    setStats((await api.home.proCancel(b.id, cancelReason.trim())).cancelStats);
+                    setCancelling(null);
+                    setCancelReason("");
+                  })}>Yes, cancel job</button>
+                  <button className="btn btn-ghost" disabled={busy} onClick={() => setCancelling(null)}>Keep job</button>
+                </div>
+              </div>
+            ) : (
+              <button className="link-btn" style={{ alignSelf: "flex-start" }} disabled={busy || !stats.canCancel} onClick={() => { setCancelling(b.id); setCancelReason(""); }}>
+                {stats.canCancel ? "Can't make it? Cancel job" : "Weekly cancellation limit reached"}
+              </button>
+            ))}
           </div>
         ))}
       </div>
@@ -150,6 +183,10 @@ function Earnings() {
   return (
     <div className="stack">
       <BalanceCard e={e} />
+      {e.penaltiesWeekPaise > 0 && (
+        <p className="card error" style={{ margin: 0 }}>Cancellation penalties in the last 7 days: {formatRupees(e.penaltiesWeekPaise)}, already taken off your balance. Cancelling more than {e.cancelStats.freePerDay} jobs in a day costs a share of that day's earnings.</p>
+      )}
+      <PartnerCancelBanner s={e.cancelStats} />
       {e.balancePaise < 0 && <p className="muted" style={{ margin: 0 }}>This is commission on jobs where you collected cash. It is taken from your next online-paid jobs, or you can pay it to ZARVA by UPI.</p>}
       <h2 style={{ marginBottom: 0 }}>Payouts</h2>
       <div className="card stack">

@@ -8,6 +8,7 @@ import type { Db, Tx } from "../../db/client";
 import { users } from "../../db/schema";
 import { badRequest, conflict, notFound } from "../../lib/errors";
 import type { NotificationService } from "../../notify";
+import type { CancellationService } from "./cancellations";
 import { payoutDestination } from "./partners";
 import { homeBookings, homeCategories, homePayoutEvents, homePayouts, homeProLedger, homePros } from "./schema";
 
@@ -23,7 +24,10 @@ export const MIN_PAYOUT_PAISE = 10_000;
  * Every change is a new ledger row; the balance is the sum. See HomeLedgerKind in @zarva/core.
  */
 export class EarningsService {
-  constructor(private db: Db, private provider: PayoutProvider, private notify: NotificationService, private now: () => Date) {}
+  constructor(
+    private db: Db, private provider: PayoutProvider, private notify: NotificationService, private now: () => Date,
+    private cancellations: CancellationService,
+  ) {}
 
   /** Inside the transaction that marks the job completed. Idempotent per booking. */
   async recordJob(tx: Tx, b: BookingRow, pro: ProRow): Promise<void> {
@@ -48,13 +52,20 @@ export class EarningsService {
   }
 
   async earnings(proId: string): Promise<HomeEarnings> {
+    // Penalties for days that have ended are written first, so the balance shown is what will be paid.
+    await this.cancellations.settle(proId);
     const weekAgo = new Date(this.now().getTime() - 7 * 86_400_000);
-    const [balancePaise, week, rows, payouts] = await Promise.all([
+    const [balancePaise, week, penalties, cancelStats, rows, payouts] = await Promise.all([
       this.balance(this.db, proId),
       this.db
         .select({ sum: sql<number>`coalesce(sum(${homeProLedger.amountPaise}), 0)::int`, n: sql<number>`count(*)::int` })
         .from(homeProLedger)
         .where(and(eq(homeProLedger.proId, proId), eq(homeProLedger.kind, "job_earning"), gt(homeProLedger.createdAt, weekAgo))),
+      this.db
+        .select({ sum: sql<number>`coalesce(sum(${homeProLedger.amountPaise}), 0)::int` })
+        .from(homeProLedger)
+        .where(and(eq(homeProLedger.proId, proId), eq(homeProLedger.kind, "cancellation_penalty"), gt(homeProLedger.createdAt, weekAgo))),
+      this.cancellations.stats(this.db, proId),
       this.db.select().from(homeProLedger).where(eq(homeProLedger.proId, proId)).orderBy(desc(homeProLedger.seq)).limit(100),
       this.db.select().from(homePayouts).where(eq(homePayouts.proId, proId)).orderBy(desc(homePayouts.createdAt)).limit(50),
     ]);
@@ -63,12 +74,15 @@ export class EarningsService {
       balancePaise,
       weekPaise: week[0]?.sum ?? 0,
       jobsThisWeek: week[0]?.n ?? 0,
+      penaltiesWeekPaise: -(penalties[0]?.sum ?? 0),
+      cancelStats,
       entries: rows.map(toEntry),
       payouts: payouts.map((p) => toPayout(p, pro?.name ?? "")),
     };
   }
 
   async balances(): Promise<{ pros: HomeProBalance[]; payouts: HomePayout[] }> {
+    await this.cancellations.settle();
     const pros = await this.db.select().from(homePros).where(inArray(homePros.status, ["active", "suspended"]));
     const sums = await this.db
       .select({ proId: homeProLedger.proId, n: sql<number>`sum(${homeProLedger.amountPaise})::int` })
@@ -112,6 +126,7 @@ export class EarningsService {
     if (!pro) throw notFound("Professional");
     const dest = destinationOf(pro);
     if (!dest) throw badRequest("no_payout_account", `${pro.name} hasn't added a UPI ID or bank account`);
+    await this.cancellations.settle(proId);
 
     const row = await this.db.transaction(async (tx) => {
       // One payout at a time per pro, so the balance check below can't be raced.

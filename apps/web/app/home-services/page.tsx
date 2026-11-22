@@ -93,7 +93,7 @@ export default function HomeServices() {
           <div className="trust-row">
             <span>✔ Background-checked professionals</span>
             <span>✔ Fixed prices, no haggling</span>
-            <span>✔ Free cancellation up to 2 hours before</span>
+            <span>✔ Free reschedule up to 90 minutes before</span>
           </div>
         </>
       ) : (

@@ -59,14 +59,20 @@ async function makePro(phone: string, cats: string[], name = "Subrata Mondal") {
   return s;
 }
 
-async function book(s: Session, opts: { services?: [string, number][]; hour?: number; payMode?: "online" | "after_service"; key?: string; addressId?: string } = {}) {
+/** paid: also pays with the mock checkout, so the booking comes back confirmed. */
+async function book(s: Session, opts: { services?: [string, number][]; hour?: number; date?: string; payMode?: "online" | "after_service"; paid?: boolean; key?: string; addressId?: string } = {}) {
   const c = await catalog();
   const addressId = opts.addressId ?? (await addAddress(s));
-  return req("POST", `${P}/bookings`, s, {
-    cityId: "durgapur", addressId, slotStart: slot(opts.hour ?? 11),
+  const r = await req("POST", `${P}/bookings`, s, {
+    cityId: "durgapur", addressId, slotStart: slot(opts.hour ?? 11, opts.date),
     items: (opts.services ?? [["fan-repair", 1]]).map(([slug, qty]) => ({ serviceId: c.svc(slug).id, qty })),
     payMode: opts.payMode ?? "online", idempotencyKey: opts.key ?? `key-${Math.random().toString(36).slice(2)}`,
   });
+  if (opts.paid && r.status === 201) {
+    const p = await payWithMock(s, r.body.booking.id, r.body.payment.clientPayload.order_id);
+    r.body.booking = p.body.booking;
+  }
+  return r;
 }
 
 async function payWithMock(s: Session, bookingId: string, orderId: string) {
@@ -111,8 +117,8 @@ describe("home services: slots", () => {
     await makePro("9000000001", ["electrician"]);
     const a = await login("9876500001");
     const b = await login("9876500002");
-    expect((await book(a, { payMode: "after_service" })).status).toBe(201);
-    const second = await book(b, { payMode: "after_service" });
+    expect((await book(a, { paid: true })).status).toBe(201);
+    const second = await book(b, { paid: true });
     expect(second.status).toBe(409);
     expect(second.body.error.code).toBe("slot_full");
     const c = await catalog();
@@ -205,31 +211,9 @@ describe("home services: booking", () => {
     await makePro("9000000001", ["electrician"]);
     const me = await login("9876500001");
     const other = await login("9876500002");
-    const r = await book(me, { payMode: "after_service" });
+    const r = await book(me, { paid: true });
     expect((await req("GET", `${P}/bookings/${r.body.booking.id}`, other)).status).toBe(404);
     expect((await req("POST", `${P}/bookings/${r.body.booking.id}/cancel`, other, {})).status).toBe(404);
-  });
-
-  it("cancelling a paid booking refunds in full; cancelling inside 2 hours is refused", async () => {
-    await makePro("9000000001", ["electrician"]);
-    const s = await login();
-    const r = await book(s, { hour: 15 });
-    const orderId = r.body.payment.clientPayload.order_id;
-    await payWithMock(s, r.body.booking.id, orderId);
-    const { rawBody, headers } = t.provider.signWebhook({ event: "payment.captured", orderId, paymentId: "pay_1", amount: r.body.booking.totalPaise });
-    await t.app.inject({ method: "POST", url: "/v1/payments/webhook/mock", payload: rawBody, headers: { ...headers, "content-type": "application/json" } });
-
-    const c = await req("POST", `${P}/bookings/${r.body.booking.id}/cancel`, s, { reason: "Plans changed" });
-    expect(c.body.booking).toMatchObject({ status: "cancelled", refundedPaise: r.body.booking.totalPaise, canCancel: false });
-    const pay = await req("GET", `/v1/payments/${r.body.booking.paymentId}`, s);
-    expect(pay.body.payment.status).toBe("refunded");
-
-    const late = await book(s, { hour: 16, payMode: "after_service" });
-    expect(late.body.booking.canCancel).toBe(true);
-    advance(5 * 60); // 14:00 IST, slot at 16:00 is exactly 2 h away
-    advance(1);
-    const refused = await req("POST", `${P}/bookings/${late.body.booking.id}/cancel`, s, {});
-    expect(refused.body.error.code).toBe("cannot_cancel");
   });
 });
 
@@ -246,7 +230,7 @@ describe("home services: professionals", () => {
     await req("PATCH", `${P}/admin/pros/${pros[0].id}`, admin, { status: "active" });
 
     const cust = await login("9876500001");
-    const b: HomeBooking = (await book(cust, { payMode: "after_service" })).body.booking;
+    const b: HomeBooking = (await book(cust, { paid: true })).body.booking;
     expect(b.status).toBe("confirmed");
 
     const jobs = (await req("GET", `${P}/pro/jobs`, proS)).body;
@@ -270,7 +254,8 @@ describe("home services: professionals", () => {
     expect((await st("in_progress", b.startCode)).body.booking.status).toBe("in_progress");
     const done = (await st("completed")).body.booking;
     expect(done).toMatchObject({ status: "completed", paid: true });
-    expect(done.events.at(-1).note).toMatch(/collected by professional/);
+    // Prepaid: nothing is collected at the door.
+    expect(done.events.some((e: { note: string | null }) => /collected by professional/.test(e.note ?? ""))).toBe(false);
     expect((await req("GET", `${P}/pro/me`, proS)).body.pro.jobsDone).toBe(1);
   });
 
@@ -278,7 +263,7 @@ describe("home services: professionals", () => {
     const p1 = await makePro("9000000001", ["electrician"], "Pro One");
     const p2 = await makePro("9000000002", ["electrician"], "Pro Two");
     const cust = await login("9876500001");
-    const b = (await book(cust, { payMode: "after_service" })).body.booking;
+    const b = (await book(cust, { paid: true })).body.booking;
     const [r1, r2] = await Promise.all([
       req("POST", `${P}/pro/jobs/${b.id}/accept`, p1),
       req("POST", `${P}/pro/jobs/${b.id}/accept`, p2),
@@ -291,8 +276,8 @@ describe("home services: professionals", () => {
     await makePro("9000000002", ["electrician"], "Pro Two");
     const a = await login("9876500001");
     const b = await login("9876500002");
-    const j1 = (await book(a, { payMode: "after_service" })).body.booking;
-    const j2 = (await book(b, { payMode: "after_service" })).body.booking;
+    const j1 = (await book(a, { paid: true })).body.booking;
+    const j2 = (await book(b, { paid: true })).body.booking;
     expect((await req("POST", `${P}/pro/jobs/${j1.id}/accept`, p1)).status).toBe(200);
     const clash = await req("POST", `${P}/pro/jobs/${j2.id}/accept`, p1);
     expect(clash.body.error.code).toBe("slot_clash");
@@ -302,7 +287,7 @@ describe("home services: professionals", () => {
     const elec = await makePro("9000000001", ["electrician"]);
     await makePro("9000000004", ["plumber"], "Bapi Bauri");
     const cust = await login("9876500001");
-    const b = (await book(cust, { services: [["tap-repair", 2]], payMode: "after_service" })).body.booking;
+    const b = (await book(cust, { services: [["tap-repair", 2]], paid: true })).body.booking;
     expect((await req("GET", `${P}/pro/jobs`, elec)).body.available).toHaveLength(0);
     expect((await req("POST", `${P}/pro/jobs/${b.id}/accept`, elec)).status).toBe(404);
   });
@@ -324,7 +309,7 @@ describe("home services: admin", () => {
     expect((await catalog()).svc("fan-repair").pricePaise).toBe(22900);
 
     const cust = await login("9876500001");
-    const b = (await book(cust, { payMode: "after_service" })).body.booking;
+    const b = (await book(cust, { paid: true })).body.booking;
     expect(b.totalPaise).toBe(22900 + 2900);
 
     const pros = (await req("GET", `${P}/admin/pros`, admin)).body.pros;
@@ -340,18 +325,18 @@ describe("home services: admin", () => {
 });
 
 describe("home services: phone required", () => {
-  it("a Google account without a phone cannot book, even pay-after-service, until it adds one", async () => {
+  it("a Google account without a phone cannot book until it adds one", async () => {
     await makePro("9000000001", ["electrician"]);
     const g = await t.app.inject({ method: "POST", url: "/v1/auth/google", payload: { idToken: "mock:riya@gmail.com:Riya Sen" } });
     const body = g.json();
     const s = { ...body, headers: { authorization: `Bearer ${body.accessToken}` } } as Session;
-    const r = await book(s, { payMode: "after_service" });
+    const r = await book(s, { paid: true });
     expect(r.status).toBe(403);
     expect(r.body.error.code).toBe("phone_required");
 
     await req("POST", "/v1/me/phone/request", s, { phone: "9876543210" });
     await req("POST", "/v1/me/phone/verify", s, { phone: "9876543210", code: t.otp.last.get("+919876543210") });
-    const ok = await book(s, { payMode: "after_service" });
+    const ok = await book(s, { paid: true });
     expect(ok.status).toBe(201);
   });
 });

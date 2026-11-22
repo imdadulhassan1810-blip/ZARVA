@@ -64,6 +64,13 @@
       "when": 1795325429083,
       "tag": "0008_apple_signin",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795330839473,
+      "tag": "0009_cancellation_rules",
+      "breakpoints": true
     }
   ]
 }

@@ -12,8 +12,9 @@ import { AdminFeedback, AdminReviews, AdminSupport, adminDownloadInvoice } from 
 import { Amount, BalanceCard, LedgerList, PayoutChip } from "../../components/Ledger";
 import { adminApi as api, isSignedIn } from "../../lib/api";
 import { loginUrl, signOut } from "../../lib/roles";
+import { AdminPolicy } from "../../components/AdminPolicy";
 
-type Tab = "bookings" | "support" | "reviews" | "feedback" | "pros" | "payouts" | "prices" | "team";
+type Tab = "bookings" | "support" | "reviews" | "feedback" | "pros" | "payouts" | "prices" | "rules" | "team";
 
 /** Operations console for the ZARVA team. Access: a ZARVA-issued admin login (see /admin/login). */
 export default function Admin() {
@@ -73,11 +74,11 @@ export default function Admin() {
     <div style={{ marginBottom: 64 }}>
       <h1>Home services admin</h1>
       <div className="day-row" role="tablist">
-        {(["bookings", "support", "reviews", "feedback", "pros", "payouts", "prices", "team"] as Tab[]).map((t) => (
+        {(["bookings", "support", "reviews", "feedback", "pros", "payouts", "prices", "rules", "team"] as Tab[]).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={`day ${tab === t ? "day-on" : ""}`} onClick={() => setTab(t)}>
             {t === "bookings" ? "Bookings" : t === "support" ? "Support" : t === "reviews" ? "Reviews" : t === "feedback" ? "Feedback"
               : t === "pros" ? `Professionals${pros.some((p) => p.status === "pending") ? ` (${pros.filter((p) => p.status === "pending").length} to review)` : ""}`
-              : t === "payouts" ? `Payouts${balances.payouts.some((p) => p.status === "manual") ? " •" : ""}` : t === "prices" ? "Prices & commission" : "Team"}
+              : t === "payouts" ? `Payouts${balances.payouts.some((p) => p.status === "manual") ? " •" : ""}` : t === "prices" ? "Prices & commission" : t === "rules" ? "Cancellation rules" : "Team"}
           </button>
         ))}
       </div>
@@ -102,6 +103,13 @@ export default function Admin() {
                   </div>
                   <div>{itemsLine(b)} · <strong>{formatRupees(b.totalPaise)}</strong> · {b.payMode === "online" ? (b.paid ? "paid online" : "unpaid") : "pay after service"}</div>
                   <div className="muted">{b.address.name}, {formatPhone(b.address.phone)} · {[b.address.line1, b.address.line2, b.address.pincode].filter(Boolean).join(", ")}</div>
+                  {b.cancellation && (
+                    <div className="muted">
+                      Cancelled by {b.cancellation.by}, {Math.floor(b.cancellation.minutesBefore / 60)} h {b.cancellation.minutesBefore % 60} min before the slot ·
+                      refund {formatRupees(b.cancellation.quote.refundPaise)} · kept {formatRupees(b.cancellation.quote.chargePaise)}
+                    </div>
+                  )}
+                  {b.rescheduleCount > 0 && <div className="muted">Rescheduled {b.rescheduleCount}×</div>}
                   {b.pro && <div>Professional: {b.pro.name}{b.pro.phone ? ` (${formatPhone(b.pro.phone)})` : ""}</div>}
                   {b.hasInvoice && (
                     <div><button className="btn btn-ghost" onClick={() => void run(() => adminDownloadInvoice(b.id, b.invoiceNumber ?? b.code))}>⬇ Invoice{b.invoiceNumber ? ` ${b.invoiceNumber}` : ""}</button></div>
@@ -113,7 +121,7 @@ export default function Admin() {
                         {fit.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.locality ?? ""}</option>)}
                       </select>
                       <button className="btn btn-danger" onClick={() => {
-                        const reason = window.prompt("Reason for cancelling (the customer sees this)");
+                        const reason = window.prompt("Reason for cancelling (the customer sees this). ZARVA cancelling refunds everything, fee included.");
                         if (reason && reason.trim().length >= 3) void run(() => api.home.admin.cancel(b.id, reason.trim()));
                       }}>Cancel booking</button>
                     </div>
@@ -135,6 +143,7 @@ export default function Admin() {
       {tab === "payouts" && <Payouts data={balances} run={run} />}
 
       {tab === "team" && <AdminTeam />}
+      {tab === "rules" && <AdminPolicy />}
       {tab === "support" && <AdminSupport />}
       {tab === "reviews" && <AdminReviews />}
       {tab === "feedback" && <AdminFeedback />}

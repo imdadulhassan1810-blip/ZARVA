@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
-  homeBookingStatuses, homeCreateBookingSchema, homeReviewSchema, homeDocUploadSchema, homeProApplySchema, homeProDocKinds, homeProPayoutSchema, homeProUpdateSchema,
+  homeBookingStatuses, homeCancelSchema, homeCreateBookingSchema, homeProCancelSchema, homeRescheduleSchema, homeReviewSchema, homeDocUploadSchema, homeProApplySchema, homeProDocKinds, homeProPayoutSchema, homeProUpdateSchema,
+  type HomePolicyInput,
 } from "@zarva/core";
 import { z } from "zod";
 import { AppError } from "../../lib/errors";
@@ -10,6 +11,7 @@ import type { PartnerService } from "./partners";
 import type { EarningsService } from "./earnings";
 import type { InvoiceService } from "./invoices";
 import type { ReviewService } from "./reviews";
+import type { PolicyService } from "./policy";
 
 const idParam = z.object({ id: z.string().uuid() });
 const confirmSchema = z.object({
@@ -25,8 +27,8 @@ const UPLOAD_LIMIT = 7.5 * 1024 * 1024;
 export function homeRoutes(
   app: FastifyInstance,
   prefix: string,
-  { svc, partners, earnings, invoices, reviews }: {
-    svc: HomeServicesService; partners: PartnerService; earnings: EarningsService; invoices: InvoiceService; reviews: ReviewService;
+  { svc, partners, earnings, invoices, reviews, policy }: {
+    svc: HomeServicesService; partners: PartnerService; earnings: EarningsService; invoices: InvoiceService; reviews: ReviewService; policy: PolicyService;
   },
 ) {
   const sendPdf = (reply: FastifyReply, pdf: { bytes: Uint8Array; filename: string }, download: boolean) =>
@@ -99,9 +101,14 @@ export function homeRoutes(
       await invoices.get(id); // fails early if the job isn't completed
       return { path: `${prefix}/invoice-download/${id}?token=${await invoices.linkToken(id)}`, expiresInSeconds: 900 };
     });
+    r.get(`${prefix}/bookings/:id/cancel-quote`, async (req) => ({ cancelInfo: await svc.cancelQuote(req.userId!, parse(idParam, req.params).id) }));
     r.post(`${prefix}/bookings/:id/cancel`, async (req) => {
-      const { reason } = parse(z.object({ reason: z.string().trim().max(200).optional() }), req.body ?? {});
-      return { booking: await svc.cancel(req.userId!, parse(idParam, req.params).id, reason) };
+      const { reason, expectedRefundPaise } = parse(homeCancelSchema, req.body ?? {});
+      return { booking: await svc.cancel(req.userId!, parse(idParam, req.params).id, reason, expectedRefundPaise) };
+    });
+    r.post(`${prefix}/bookings/:id/reschedule`, async (req) => {
+      const { slotStart } = parse(homeRescheduleSchema, req.body);
+      return { booking: await svc.reschedule(req.userId!, parse(idParam, req.params).id, slotStart) };
     });
 
   });
@@ -122,7 +129,10 @@ export function homeRoutes(
     r.post(`${prefix}/pro/me/submit`, async (req) => ({ pro: await partners.submit(req.userId!) }));
     r.get(`${prefix}/pro/earnings`, async (req) => {
       const pro = await partners.proFor(req.userId!);
-      if (!pro || (pro.status !== "active" && pro.status !== "suspended")) return { balancePaise: 0, weekPaise: 0, jobsThisWeek: 0, entries: [], payouts: [] };
+      if (!pro || (pro.status !== "active" && pro.status !== "suspended")) return {
+        balancePaise: 0, weekPaise: 0, jobsThisWeek: 0, penaltiesWeekPaise: 0, entries: [], payouts: [],
+        cancelStats: { today: 0, week: 0, freePerDay: 0, maxPerWeek: 0, todayPenaltyBps: 0, nextPenaltyBps: 0, canCancel: false },
+      };
       return earnings.earnings(pro.id);
     });
 
@@ -133,6 +143,11 @@ export function homeRoutes(
       return reviews.forPro(pro.id);
     });
     r.post(`${prefix}/pro/jobs/:id/accept`, async (req) => ({ booking: await svc.accept(req.userId!, parse(idParam, req.params).id) }));
+    r.get(`${prefix}/pro/cancel-stats`, async (req) => ({ cancelStats: await svc.proCancelStats(req.userId!) }));
+    r.post(`${prefix}/pro/jobs/:id/cancel`, async (req) => {
+      const { reason } = parse(homeProCancelSchema, req.body);
+      return { cancelStats: await svc.proCancel(req.userId!, parse(idParam, req.params).id, reason) };
+    });
     r.post(`${prefix}/pro/jobs/:id/status`, async (req) => {
       const body = parse(z.object({ status: z.enum(["on_the_way", "in_progress", "completed"]), startCode: z.string().regex(/^\d{4}$/).optional() }), req.body);
       return { booking: await svc.proUpdate(req.userId!, parse(idParam, req.params).id, body.status, body.startCode) };
@@ -211,6 +226,8 @@ export function homeRoutes(
       const b = parse(z.object({ amountPaise: z.number().int().min(-10_000_000).max(10_000_000).refine((n) => n !== 0, "Amount can't be zero"), note: z.string().trim().min(3).max(200) }), req.body);
       return { balancePaise: await earnings.adjust(req.adminId!, parse(idParam, req.params).id, b.amountPaise, b.note) };
     });
+    r.get(`${prefix}/admin/policy`, async () => ({ policy: await policy.get() }));
+    r.put(`${prefix}/admin/policy`, async (req) => ({ policy: await policy.set(req.adminId!, (req.body ?? {}) as HomePolicyInput) }));
     r.get(`${prefix}/admin/services`, async () => ({ services: await svc.adminServices() }));
     r.patch(`${prefix}/admin/services/:id`, async (req) => {
       const patch = parse(

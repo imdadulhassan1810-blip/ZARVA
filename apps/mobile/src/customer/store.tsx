@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { HOME_RULES, homeTotals, type HomeCategory, type HomeService } from "@zarva/core";
+import { DEFAULT_HOME_POLICY, HOME_RULES, homeTotals, type HomeCategory, type HomePolicy, type HomeService } from "@zarva/core";
 import { api } from "../api";
 
 export const CITY = "durgapur";
@@ -11,6 +11,8 @@ interface Store {
   categories: HomeCategory[] | null;
   services: HomeService[];
   onlinePayment: boolean;
+  /** Cancellation and reschedule rules (edited by the ZARVA team in admin). */
+  policy: HomePolicy;
   catalogError: string | null;
   reloadCatalog: () => Promise<void>;
   cart: Cart;
@@ -29,6 +31,7 @@ export function CustomerStore({ children }: { children: ReactNode }) {
   const [categories, setCategories] = useState<HomeCategory[] | null>(null);
   const [services, setServices] = useState<HomeService[]>([]);
   const [onlinePayment, setOnline] = useState(false);
+  const [policy, setPolicy] = useState<HomePolicy>(DEFAULT_HOME_POLICY);
   const [catalogError, setError] = useState<string | null>(null);
   const [cart, setCart] = useState<Cart>({ categoryId: null, items: {} });
 
@@ -40,6 +43,7 @@ export function CustomerStore({ children }: { children: ReactNode }) {
       setServices(r.services);
       // Off while the server's Razorpay keys are test keys (no real money would move).
       setOnline(r.onlinePayment !== false);
+      if (r.policy) setPolicy(r.policy);
     } catch (e) {
       setError((e as Error).message);
       setCategories((c) => c ?? []);
@@ -55,7 +59,7 @@ export function CustomerStore({ children }: { children: ReactNode }) {
     });
     const count = lines.reduce((n, l) => n + l.qty, 0);
     return {
-      categories, services, onlinePayment, catalogError, reloadCatalog, cart, lines, count, totals: homeTotals(lines),
+      categories, services, onlinePayment, policy, catalogError, reloadCatalog, cart, lines, count, totals: homeTotals(lines),
       setQty(s, qty, force) {
         const same = cart.categoryId === s.categoryId;
         if (!same && count > 0 && qty > 0 && !force) return false;
@@ -67,7 +71,7 @@ export function CustomerStore({ children }: { children: ReactNode }) {
       },
       clearCart: () => setCart({ categoryId: null, items: {} }),
     };
-  }, [categories, services, onlinePayment, catalogError, reloadCatalog, cart]);
+  }, [categories, services, onlinePayment, policy, catalogError, reloadCatalog, cart]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

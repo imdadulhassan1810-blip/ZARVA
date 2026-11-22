@@ -11,7 +11,7 @@ import { seedHomeCatalog } from "../src/modules/home/seed";
 export async function setupTestApp(env: Record<string, string> = {}, opts: { now?: () => Date; payoutProvider?: PayoutProvider } = {}) {
   const url = process.env.TEST_DATABASE_URL ?? "postgres://zarva:zarva@localhost:5432/zarva_test";
   const { db, sql } = createDb(url);
-  await sql`truncate feedback, support_messages, support_tickets, home_reviews, home_invoices, home_invoice_counters, notifications, home_payout_events, home_pro_ledger, home_payouts, home_pro_documents, admin_sessions, admin_accounts, home_booking_events, home_booking_items, home_bookings, home_pros, payment_events, payments, addresses, sessions, otp_challenges, users restart identity cascade`;
+  await sql`truncate feedback, support_messages, support_tickets, home_reviews, home_invoices, home_settings, home_pro_penalties, home_pro_cancellations, home_invoice_counters, notifications, home_payout_events, home_pro_ledger, home_payouts, home_pro_documents, admin_sessions, admin_accounts, home_booking_events, home_booking_items, home_bookings, home_pros, payment_events, payments, addresses, sessions, otp_challenges, users restart identity cascade`;
   await seedHomeCatalog(db);
   await sql`update home_categories set commission_bps = 2000`;
   const config = loadConfig({ NODE_ENV: "test", DATABASE_URL: url, JWT_SECRET: "test-secret-test-secret-test-secret-123", ...env });

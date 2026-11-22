@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { gradient, logoRules, verticalIds, verticals, type VerticalId } from "@zarva/brand";
-import { formatRupees, HOME_RULES, type HomeCategory, type HomeService, type ModuleStatus } from "@zarva/core";
+import { DEFAULT_HOME_POLICY, formatNotice, formatRupees, HOME_RULES, type HomeCategory, type HomeService, type ModuleStatus } from "@zarva/core";
 import { api } from "../lib/api";
 import { Logo } from "../components/Logo";
 import { LandingReviews } from "../components/Reviews";
@@ -166,7 +166,7 @@ export default function Home() {
         <div><span aria-hidden>🛡️</span><div><strong>Verified pros</strong><span>ID and documents checked before the first job</span></div></div>
         <div><span aria-hidden>₹</span><div><strong>Fixed prices</strong><span>See the price before you book. No haggling</span></div></div>
         <div><span aria-hidden>🕑</span><div><strong>Slots 8 AM to 8 PM</strong><span>Book up to {HOME_RULES.bookingWindowDays} days ahead</span></div></div>
-        <div><span aria-hidden>↩︎</span><div><strong>Free cancellation</strong><span>Up to {HOME_RULES.freeCancelMinutes / 60} hours before your slot</span></div></div>
+        <div><span aria-hidden>↩︎</span><div><strong>Free reschedule</strong><span>Move or cancel up to {formatNotice(DEFAULT_HOME_POLICY.customerCutoffMinutes)} before your slot</span></div></div>
       </section>
 
       {/* ---------- Categories ---------- */}

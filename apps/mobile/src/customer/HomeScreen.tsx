@@ -127,7 +127,7 @@ export function HomeScreen() {
           ) : (
             <>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-                {([["shield-checkmark", "Verified pros"], ["pricetag", "Fixed prices"], ["refresh-circle", "Free cancellation"], ["cash", "Pay after service"]] as [IconName, string][]).map(([icon, label]) => (
+                {([["shield-checkmark", "Verified pros"], ["pricetag", "Fixed prices"], ["refresh-circle", "Free reschedule"], ["card", "Secure online payment"]] as [IconName, string][]).map(([icon, label]) => (
                   <View key={label} style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border }}>
                     <Ionicons name={icon} size={16} color={t.success} />
                     <Text style={{ color: t.text, fontWeight: "600", fontSize: 13 }}>{label}</Text>

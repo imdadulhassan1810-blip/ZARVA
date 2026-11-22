@@ -55,10 +55,14 @@ async function book(s: Session, hour = 11, services: [string, number][] = [["fan
   });
   const r = await req("POST", `${P}/bookings`, s, {
     cityId: "durgapur", addressId: addr.body.address.id, slotStart: istInstant("2026-11-23", hour).toISOString(),
-    items: services.map(([slug, qty]) => ({ serviceId: c.svc(slug).id, qty })), payMode: "after_service", idempotencyKey: `k-${Math.random()}`,
+    items: services.map(([slug, qty]) => ({ serviceId: c.svc(slug).id, qty })), payMode: "online", idempotencyKey: `k-${Math.random()}`,
   });
   expect(r.status).toBe(201);
-  return r.body.booking as { id: string; code: string; startCode: string; totalPaise: number };
+  // Prepaid only: pay with the mock checkout so the booking is confirmed.
+  const m = await req("POST", `/v1/payments/mock/${r.body.payment.clientPayload.order_id}/succeed`);
+  const paid = await req("POST", `${P}/bookings/${r.body.booking.id}/payment/confirm`, s, m.body.confirmation);
+  expect(paid.body.booking.status).toBe("confirmed");
+  return paid.body.booking as { id: string; code: string; startCode: string; totalPaise: number };
 }
 async function doJob(pro: Session, bookingId: string, startCode: string) {
   expect((await req("POST", `${P}/pro/jobs/${bookingId}/accept`, pro)).status).toBe(200);

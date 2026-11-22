@@ -6,8 +6,8 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { setStatusBarStyle } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import {
-  formatPhone, formatRupees, HOME_DOC_RULES, homeLedgerLabel, homeProDocLabel, homeProIdTypeLabel, homeProIdTypes, homeProRequiredDocs,
-  type HomeBooking, type HomeCategory, type HomeEarnings, type HomePro, type HomeProDocKind, type HomeProIdType, type HomeRatingSummary,
+  formatBps, formatPhone, formatRupees, HOME_DOC_RULES, homeLedgerLabel, homeProDocLabel, homeProIdTypeLabel, homeProIdTypes, homeProRequiredDocs,
+  type HomeBooking, type HomeCategory, type HomeEarnings, type HomePartnerCancelStats, type HomePro, type HomeProDocKind, type HomeProIdType, type HomeRatingSummary,
   type HomeReview,
 } from "@zarva/core";
 import { Glow } from "../Glow";
@@ -129,7 +129,13 @@ function JobsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [codeFor, setCodeFor] = useState<HomeBooking | null>(null);
   const [cashFor, setCashFor] = useState<HomeBooking | null>(null);
-  const load = useCallback(() => api.home.proJobs().then((j) => { setJobs(j); setError(null); }).catch((e: Error) => { setError(e.message); setJobs((x) => x ?? { available: [], mine: [] }); }), []);
+  const [stats, setStats] = useState<HomePartnerCancelStats | null>(null);
+  const [cancelFor, setCancelFor] = useState<HomeBooking | null>(null);
+  const [reason, setReason] = useState("");
+  const load = useCallback(() => Promise.all([
+    api.home.proJobs().then((j) => { setJobs(j); setError(null); }).catch((e: Error) => { setError(e.message); setJobs((x) => x ?? { available: [], mine: [] }); }),
+    api.home.proCancelStats().then((r) => setStats(r.cancelStats)).catch(() => {}),
+  ]), []);
   useEffect(() => {
     void load();
     const i = setInterval(() => void load(), 30_000);
@@ -171,6 +177,7 @@ function JobsScreen() {
 
         <View style={{ padding: 16, gap: 12 }}>
           {error && <ErrorBanner t={t} message={error} onRetry={() => void load()} />}
+          {stats && <CancelStatsCard t={t} s={stats} />}
           <Text style={{ color: t.text, fontSize: 19, fontWeight: "800" }}>Your jobs</Text>
           {jobs === null ? <SkeletonCard t={t} lines={4} />
             : jobs.mine.length === 0 ? <Card t={t}><Text style={{ color: t.muted }}>No jobs yet. Accept one below.</Text></Card>
@@ -195,6 +202,10 @@ function JobsScreen() {
                     <Text style={{ color: t.muted, fontSize: 13 }}>{b.payMode === "after_service" ? `Collect ${formatRupees(b.totalPaise)} from the customer` : "Paid online, collect nothing"}</Text>
                   </View>
                   {action(b)}
+                  {(b.status === "assigned" || b.status === "on_the_way") && stats && (
+                    <Button t={t} variant="plain" size="sm" icon="close-circle-outline" disabled={!stats.canCancel || busy !== null}
+                      title={stats.canCancel ? "Can't make it? Cancel job" : "Weekly cancellation limit reached"} onPress={() => { setReason(""); setCancelFor(b); }} />
+                  )}
                 </Card>
               ))}
 
@@ -222,11 +233,52 @@ function JobsScreen() {
 
       <StartCodeSheet t={t} job={codeFor} busy={busy !== null} onClose={() => setCodeFor(null)}
         onSubmit={async (code) => { const b = codeFor!; if (await run(b.id, () => api.home.proStatus(b.id, "in_progress", code))) setCodeFor(null); }} />
+      <Sheet t={t} visible={cancelFor !== null} onClose={() => setCancelFor(null)} title="Cancel this job?">
+        <View style={{ padding: 20, gap: 12 }}>
+          {stats && (
+            <Text style={{ color: t.muted }}>
+              The job goes back to other partners. This will be cancellation {stats.today + 1} today and {stats.week + 1} this week
+              (limits: {stats.freePerDay} a day free, {stats.maxPerWeek} a week).
+            </Text>
+          )}
+          {stats && stats.nextPenaltyBps > 0 && (
+            <ErrorBanner t={t} message={`${formatBps(stats.nextPenaltyBps)} of today's earnings will be deducted from your weekly payout.`} />
+          )}
+          <Field t={t} label="Reason" value={reason} onChangeText={setReason} maxLength={200} placeholder="e.g. Bike broke down" />
+          <Button t={t} variant="danger" title="Yes, cancel job" loading={busy !== null} disabled={reason.trim().length < 3}
+            onPress={async () => {
+              const b = cancelFor!;
+              if (await run(b.id, async () => setStats((await api.home.proCancel(b.id, reason.trim())).cancelStats))) setCancelFor(null);
+            }} />
+          <Button t={t} variant="outline" title="Keep job" onPress={() => setCancelFor(null)} />
+        </View>
+      </Sheet>
       <ConfirmSheet t={t} visible={cashFor !== null} onClose={() => setCashFor(null)}
         title="Cash collected?" body={cashFor ? `Did you collect ${formatRupees(cashFor.totalPaise)} from the customer?` : ""}
         confirm="Yes, complete job" cancel="Not yet"
         onConfirm={() => { const b = cashFor!; void run(b.id, () => api.home.proStatus(b.id, "completed")); }} />
     </View>
+  );
+}
+
+/** Today's and this week's cancellations, and what the next one would cost. */
+function CancelStatsCard({ t, s }: { t: Theme; s: HomePartnerCancelStats }) {
+  const warn = !s.canCancel || s.todayPenaltyBps > 0 || s.nextPenaltyBps > 0;
+  const msg = !s.canCancel
+    ? "You've reached this week's limit. You can't cancel more jobs until Monday. Call ZARVA support if you can't do a job."
+    : s.todayPenaltyBps > 0
+      ? `You've passed ${s.freePerDay} cancellations today: ${formatBps(s.todayPenaltyBps)} of today's earnings will be deducted from your weekly payout.`
+      : s.nextPenaltyBps > 0
+        ? `One more cancellation today and ${formatBps(s.nextPenaltyBps)} of today's earnings will be deducted from your weekly payout.`
+        : `Up to ${s.freePerDay} cancellations a day have no penalty. After that, a share of that day's earnings is deducted.`;
+  return (
+    <Card t={t} style={{ gap: 6, borderColor: warn ? t.warning : t.border, borderWidth: warn ? 2 : 1 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Ionicons name={warn ? "warning-outline" : "information-circle-outline"} size={18} color={warn ? t.warning : t.muted} />
+        <Text style={{ color: t.text, fontWeight: "800" }}>Cancellations: today {s.today}/{s.freePerDay} free · week {s.week}/{s.maxPerWeek}</Text>
+      </View>
+      <Text style={{ color: warn ? t.text : t.muted, fontSize: 13 }}>{msg}</Text>
+    </Card>
   );
 }
 
@@ -285,10 +337,12 @@ function EarningsScreen() {
         <View style={{ flexDirection: "row", gap: 10 }}>
           <Stat label="Last 7 days" value={e ? formatRupees(e.weekPaise) : "–"} />
           <Stat label="Jobs this week" value={e ? String(e.jobsThisWeek) : "–"} />
+          {e && e.penaltiesWeekPaise > 0 && <Stat label="Penalties, 7 days" value={`−${formatRupees(e.penaltiesWeekPaise)}`} />}
         </View>
       </InkHeader>
       <View style={{ padding: 16, gap: 12 }}>
         {error && <ErrorBanner t={t} message={error} onRetry={() => void load()} />}
+        {e && <CancelStatsCard t={t} s={e.cancelStats} />}
         <Text style={{ color: t.text, fontSize: 19, fontWeight: "800" }}>Payouts</Text>
         {!e ? <SkeletonCard t={t} lines={2} /> : e.payouts.length === 0 ? <Card t={t}><Text style={{ color: t.muted }}>No payouts yet. ZARVA pays your balance every week.</Text></Card> : (
           <Group t={t}>
@@ -310,7 +364,7 @@ function EarningsScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: t.text, fontWeight: "600" }}>{homeLedgerLabel[x.kind]}{x.bookingCode ? ` · ${x.bookingCode}` : ""}</Text>
-                  <Text style={{ color: t.muted, fontSize: 12 }}>{new Date(x.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</Text>
+                  <Text style={{ color: t.muted, fontSize: 12 }}>{new Date(x.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}{x.kind === "cancellation_penalty" && x.note ? ` · ${x.note}` : ""}</Text>
                 </View>
                 <Text style={{ color: x.amountPaise < 0 ? t.danger : t.success, fontWeight: "800" }}>{x.amountPaise > 0 ? "+" : x.amountPaise < 0 ? "−" : ""}{formatRupees(Math.abs(x.amountPaise))}</Text>
               </View>

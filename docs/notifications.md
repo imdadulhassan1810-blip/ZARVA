@@ -30,6 +30,8 @@ Copy each text exactly as written:
 | `job_completed` | ZARVA: Booking {#var#} is complete. Amount {#var#}. Thank you for choosing ZARVA. | code, amount |
 | `booking_cancelled` | ZARVA: Booking {#var#} is cancelled. Reason: {#var#}. | code, reason |
 | `refund_started` | ZARVA: Refund of {#var#} for booking {#var#} has started. It reaches your account in 5-7 days. | amount, code |
+| `booking_rescheduled` | ZARVA: Booking {#var#} is moved to {#var#}. We will share your professional's details soon. | code, when |
+| `pro_changed` | ZARVA: Your professional for booking {#var#} on {#var#} can't make it. We are assigning another professional. | code, when |
 | `pro_job_assigned` | ZARVA Partner: New job {#var#} on {#var#} at {#var#}. Open the partner app for details. | code, when, area |
 | `pro_job_cancelled` | ZARVA Partner: Job {#var#} on {#var#} has been cancelled. Please do not go to the customer. | code, when |
 | `pro_approved` | ZARVA Partner: Welcome {#var#}, your profile is approved. You can now accept jobs in the partner app. | name |

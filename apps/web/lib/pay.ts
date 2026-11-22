@@ -35,7 +35,7 @@ export async function payForBooking(bookingId: string, payment: HomePaymentStart
           resolve({ providerOrderId: r.razorpay_order_id, providerPaymentId: r.razorpay_payment_id, signature: r.razorpay_signature }),
         modal: { ondismiss: () => reject(new Error("Payment cancelled. Your slot is held for 15 minutes.")) },
       });
-      rzp.on("payment.failed", () => reject(new Error("Payment failed. Try again or choose Pay after service.")));
+      rzp.on("payment.failed", () => reject(new Error("Payment failed. Please try again.")));
       rzp.open();
     });
   }

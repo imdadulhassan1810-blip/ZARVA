@@ -6,6 +6,7 @@ import type {
   HomeBookingReviewState, HomeProApply, HomeProBalance, HomeProDocKind, HomeProPayoutInput, HomeProUpdate, HomeRatingSummary, HomeReview,
   HomeReviewInput, HomeService, HomeSlotDay,
 } from "./home";
+import type { HomeCancelInfo, HomePartnerCancelStats, HomePolicy, HomePolicyInput } from "./home-policy";
 import type { Feedback, FeedbackInput, SupportCreate, SupportStatus, SupportTicket } from "./support";
 
 export interface HomePaymentStart { id: string; status: string; clientPayload: Record<string, unknown> }
@@ -188,7 +189,7 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
       proReviews: () => call<{ summary: HomeRatingSummary; reviews: HomeReview[] }>("GET", `${H}/pro/reviews`),
       cities: () => raw<{ cities: HomeCity[] }>("GET", `${H}/cities`, undefined, false),
       catalog: (city: string) =>
-        raw<{ city: HomeCity; categories: HomeCategory[]; services: HomeService[]; onlinePayment?: boolean }>("GET", `${H}/catalog?city=${encodeURIComponent(city)}`, undefined, false),
+        raw<{ city: HomeCity; categories: HomeCategory[]; services: HomeService[]; onlinePayment?: boolean; prepaidOnly?: boolean; policy?: HomePolicy }>("GET", `${H}/catalog?city=${encodeURIComponent(city)}`, undefined, false),
       slots: (city: string, categoryId: string) =>
         raw<{ days: HomeSlotDay[] }>("GET", `${H}/slots?city=${encodeURIComponent(city)}&categoryId=${categoryId}`, undefined, false),
       createBooking: (b: HomeCreateBooking) => call<{ booking: HomeBooking; payment: HomePaymentStart | null }>("POST", `${H}/bookings`, b),
@@ -196,7 +197,11 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
       booking: (id: string) => call<{ booking: HomeBooking }>("GET", `${H}/bookings/${id}`),
       pay: (id: string) => call<{ booking: HomeBooking; payment: HomePaymentStart }>("POST", `${H}/bookings/${id}/pay`, {}),
       confirmPayment: (id: string, c: PaymentConfirmation) => call<{ booking: HomeBooking }>("POST", `${H}/bookings/${id}/payment/confirm`, c),
-      cancel: (id: string, reason?: string) => call<{ booking: HomeBooking }>("POST", `${H}/bookings/${id}/cancel`, { reason }),
+      /** Pass the refund the customer was shown: if it changed meanwhile the API answers quote_changed (409). */
+      cancel: (id: string, reason?: string, expectedRefundPaise?: number) =>
+        call<{ booking: HomeBooking }>("POST", `${H}/bookings/${id}/cancel`, { reason, expectedRefundPaise }),
+      cancelQuote: (id: string) => call<{ cancelInfo: HomeCancelInfo }>("GET", `${H}/bookings/${id}/cancel-quote`),
+      reschedule: (id: string, slotStart: string) => call<{ booking: HomeBooking }>("POST", `${H}/bookings/${id}/reschedule`, { slotStart }),
 
       proMe: () => call<{ pro: HomePro | null }>("GET", `${H}/pro/me`),
       proApply: (p: HomeProApply) => call<{ pro: HomePro }>("POST", `${H}/pro/apply`, p),
@@ -210,6 +215,8 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
       proSetPayout: (p: HomeProPayoutInput) => call<{ pro: HomePro }>("PUT", `${H}/pro/me/payout`, p),
       proSubmit: () => call<{ pro: HomePro }>("POST", `${H}/pro/me/submit`, {}),
       proEarnings: () => call<HomeEarnings>("GET", `${H}/pro/earnings`),
+      proCancelStats: () => call<{ cancelStats: HomePartnerCancelStats }>("GET", `${H}/pro/cancel-stats`),
+      proCancel: (id: string, reason: string) => call<{ cancelStats: HomePartnerCancelStats }>("POST", `${H}/pro/jobs/${id}/cancel`, { reason }),
 
       admin: {
         bookings: (status?: HomeBookingStatus) => call<{ bookings: HomeBooking[] }>("GET", `${H}/admin/bookings${status ? `?status=${status}` : ""}`),
@@ -232,6 +239,8 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
         adjust: (proId: string, amountPaise: number, note: string) =>
           call<{ balancePaise: number }>("POST", `${H}/admin/pros/${proId}/adjustments`, { amountPaise, note }),
         services: () => call<{ services: HomeService[] }>("GET", `${H}/admin/services`),
+        policy: () => call<{ policy: HomePolicy }>("GET", `${H}/admin/policy`),
+        setPolicy: (p: HomePolicyInput) => call<{ policy: HomePolicy }>("PUT", `${H}/admin/policy`, p),
         reviews: (q: { hidden?: boolean; maxRating?: number } = {}) =>
           call<{ reviews: HomeReview[] }>("GET", `${H}/admin/reviews?${q.hidden === undefined ? "" : `hidden=${q.hidden}&`}${q.maxRating ? `maxRating=${q.maxRating}` : ""}`),
         hideReview: (id: string, reason: string) => call<{ review: HomeReview }>("POST", `${H}/admin/reviews/${id}/hide`, { reason }),

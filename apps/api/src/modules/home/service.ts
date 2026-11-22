@@ -1,17 +1,19 @@
 import { randomInt } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
-  bookableSlotStarts, bookingCode, formatDay, formatPhone, formatRupees, formatSlot, HOME_RULES, homeStatusLabel, homeTotals, istDate,
-  isSlotStart, proNextStatus,
-  type HomeAddressSnapshot, type HomeBooking, type HomeBookingStatus, type HomeCategory, type HomeCity, type HomeCreateBooking,
-  type HomeService, type HomeSlotDay,
+  bookableSlotStarts, bookingCode, formatDay, formatPhone, formatRupees, formatSlot, HOME_RULES, homeChangeBlockText, homeRefundQuote,
+  homeStatusLabel, homeTotals, istDate, isSlotStart, proNextStatus,
+  type HomeAddressSnapshot, type HomeBooking, type HomeBookingStatus, type HomeCancelInfo, type HomeCancellation, type HomeCategory, type HomeCity,
+  type HomeCreateBooking, type HomePartnerCancelStats, type HomePolicy, type HomeRefundQuote, type HomeService, type HomeSlotDay,
 } from "@zarva/core";
 import type { Db, Tx } from "../../db/client";
 import { addresses, payments, users } from "../../db/schema";
 import { AppError, badRequest, conflict, forbidden, notFound, pgErrorCode } from "../../lib/errors";
 import type { PaymentRow, PaymentService } from "../../payments/service";
 import type { NotificationService } from "../../notify";
+import type { CancellationService } from "./cancellations";
 import type { EarningsService } from "./earnings";
+import type { PolicyService } from "./policy";
 import type { InvoiceService } from "./invoices";
 import type { ReviewService } from "./reviews";
 import {
@@ -26,7 +28,10 @@ type View = "customer" | "pro" | "preview" | "admin";
 
 /** Statuses that hold a slot. Unpaid online bookings hold it only for the payment window. */
 const LIVE: HomeBookingStatus[] = ["confirmed", "assigned", "on_the_way", "in_progress", "completed"];
-const CUSTOMER_CANCELLABLE: HomeBookingStatus[] = ["pending_payment", "confirmed", "assigned"];
+/** A paid booking can be cancelled or moved by the customer only before the professional sets off. */
+const CUSTOMER_CHANGEABLE: HomeBookingStatus[] = ["confirmed", "assigned"];
+/** A professional can drop a job they accepted until they start it. */
+const PRO_CANCELLABLE: HomeBookingStatus[] = ["assigned", "on_the_way"];
 
 export class HomeServicesService {
   constructor(
@@ -37,6 +42,8 @@ export class HomeServicesService {
     private earnings: EarningsService,
     private invoices: InvoiceService,
     private reviews: ReviewService,
+    private policy: PolicyService,
+    private cancellations: CancellationService,
     private opts: { onlinePayments: boolean } = { onlinePayments: true },
   ) {
     payments.onStatusChange("home", (p, tx) => this.onPayment(p, tx));
@@ -56,7 +63,9 @@ export class HomeServicesService {
     return city;
   }
 
-  async catalog(cityId: string): Promise<{ city: HomeCity; categories: HomeCategory[]; services: HomeService[]; onlinePayment: boolean }> {
+  async catalog(cityId: string): Promise<{
+    city: HomeCity; categories: HomeCategory[]; services: HomeService[]; onlinePayment: boolean; prepaidOnly: true; policy: HomePolicy;
+  }> {
     const city = await this.activeCity(cityId);
     const cats = await this.db.select().from(homeCategories).where(eq(homeCategories.active, true)).orderBy(asc(homeCategories.sort));
     const svcs = await this.db
@@ -72,6 +81,9 @@ export class HomeServicesService {
       })),
       services: svcs.map(toService),
       onlinePayment: this.opts.onlinePayments,
+      // Every booking is paid up front; the apps no longer offer pay after service.
+      prepaidOnly: true,
+      policy: await this.policy.get(),
     };
   }
 
@@ -154,8 +166,10 @@ export class HomeServicesService {
     const address: HomeAddressSnapshot = {
       name: addr.name, phone: addr.phone, line1: addr.line1, line2: addr.line2, landmark: addr.landmark, city: addr.city, pincode: addr.pincode,
     };
-    const online = input.payMode === "online";
-    if (online && !this.opts.onlinePayments) throw badRequest("online_payment_off", "Online payment isn't available yet. Choose Pay after service.");
+    // Prepaid only: no cash after the service.
+    if (input.payMode !== "online") throw badRequest("prepaid_only", "Bookings are paid online in advance. Pay after service isn't available.");
+    if (!this.opts.onlinePayments) throw badRequest("online_payment_off", "Online payment isn't live yet, so bookings are paused. Please check back soon.");
+    const online = true;
 
     const row = await this.db.transaction(async (tx) => {
       // Serialise bookings for the same slot so two customers can't take the last professional.
@@ -207,7 +221,7 @@ export class HomeServicesService {
   async pay(userId: string, bookingId: string): Promise<{ booking: HomeBooking; payment: PaymentOut }> {
     const b = await this.owned(userId, bookingId);
     if (b.status !== "pending_payment" || b.payMode !== "online") throw badRequest("not_payable", "This booking doesn't need payment");
-    if (!this.opts.onlinePayments) throw badRequest("online_payment_off", "Online payment isn't available yet. Choose Pay after service.");
+    if (!this.opts.onlinePayments) throw badRequest("online_payment_off", "Online payment isn't live yet, so bookings are paused. Please check back soon.");
     const current = await this.currentPayment(b);
     if (current) return { booking: await this.load(b.id, "customer"), payment: current };
     const [prior] = await this.db
@@ -260,26 +274,102 @@ export class HomeServicesService {
     return b;
   }
 
-  private canCustomerCancel(b: BookingRow): boolean {
-    if (!CUSTOMER_CANCELLABLE.includes(b.status)) return false;
-    if (b.status === "pending_payment") return true;
-    return b.slotStart.getTime() - this.now().getTime() >= HOME_RULES.freeCancelMinutes * 60_000;
+  /** Cancel / reschedule rules for this booking right now, and the refund if cancelled now. */
+  private cancelInfo(b: BookingRow, p: HomePolicy): HomeCancelInfo {
+    const msBefore = b.slotStart.getTime() - this.now().getTime();
+    const changeDeadline = new Date(b.slotStart.getTime() - p.customerCutoffMinutes * 60_000).toISOString();
+    const reschedulesLeft = Math.max(p.maxReschedules - b.rescheduleCount, 0);
+    // Not paid yet: nothing to refund, so it can always be dropped (it can't be moved until it's paid).
+    if (b.status === "pending_payment") {
+      return { canCancel: true, canReschedule: false, cancelBlock: null, rescheduleBlock: "not_changeable", changeDeadline, quote: null, reschedulesLeft };
+    }
+    const changeable = CUSTOMER_CHANGEABLE.includes(b.status);
+    const tooLate = msBefore < p.customerCutoffMinutes * 60_000;
+    const cancelBlock = !changeable ? "not_changeable" : tooLate ? "too_late" : null;
+    const rescheduleBlock = cancelBlock ?? (reschedulesLeft === 0 ? "reschedule_limit" : null);
+    const quote = changeable && b.paid ? homeRefundQuote(b, Math.floor(msBefore / 60_000), p) : null;
+    return { canCancel: !cancelBlock, canReschedule: !rescheduleBlock, cancelBlock, rescheduleBlock, changeDeadline, quote, reschedulesLeft };
   }
 
-  async cancel(userId: string, id: string, reason: string | undefined): Promise<HomeBooking> {
+  /** What the customer would get back if they cancelled now. */
+  async cancelQuote(userId: string, id: string): Promise<HomeCancelInfo> {
     const b = await this.owned(userId, id);
-    if (!this.canCustomerCancel(b)) {
-      throw badRequest("cannot_cancel", "This booking can't be cancelled in the app any more. Call support.");
+    return this.cancelInfo(b, await this.policy.get());
+  }
+
+  async cancel(userId: string, id: string, reason: string | undefined, expectedRefundPaise?: number): Promise<HomeBooking> {
+    const b = await this.owned(userId, id);
+    const p = await this.policy.get();
+    const info = this.cancelInfo(b, p);
+    if (!info.canCancel) throw badRequest("cannot_cancel", homeChangeBlockText[info.cancelBlock ?? "not_changeable"](p));
+    // The refund moved into a lower slab between showing it and confirming: show the new amount first.
+    if (expectedRefundPaise !== undefined && info.quote && info.quote.refundPaise !== expectedRefundPaise) {
+      throw new AppError(409, "quote_changed", `Your refund is now ${formatRupees(info.quote.refundPaise)}, because the time moved past a refund step. Check and confirm again.`, { quote: info.quote });
     }
-    await this.cancelInternal(b, "customer", reason ?? "Cancelled by customer");
+    const minutesBefore = Math.floor((b.slotStart.getTime() - this.now().getTime()) / 60_000);
+    await this.cancelInternal(b, "customer", reason || "Cancelled by customer", info.quote ? { minutesBefore, quote: info.quote } : null);
     return this.load(id, "customer");
   }
 
-  private async cancelInternal(b: BookingRow, actor: Actor, reason: string): Promise<void> {
+  /** Free reschedule to another bookable slot. The job goes back to the pool for the new time. */
+  async reschedule(userId: string, id: string, slotStart: string): Promise<HomeBooking> {
+    const b = await this.owned(userId, id);
+    const p = await this.policy.get();
+    const info = this.cancelInfo(b, p);
+    if (!info.canReschedule) {
+      const why = b.status === "pending_payment" ? "Pay for the booking first, then you can move it." : homeChangeBlockText[info.rescheduleBlock ?? "not_changeable"](p);
+      throw badRequest("cannot_reschedule", why);
+    }
+    const slot = new Date(slotStart);
+    if (slot.getTime() === b.slotStart.getTime()) throw badRequest("same_slot", "That's the time you already have. Pick another slot.");
+    const bookable = bookableSlotStarts(this.now()).some((s) => s.getTime() === slot.getTime());
+    if (!isSlotStart(slot) || !bookable) throw badRequest("invalid_slot", "That time slot can't be booked. Pick another.");
+
+    await this.db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`home:${b.cityId}:${b.categoryId}:${slot.toISOString()}`}))`);
+      const cap = await this.capacity(tx, b.cityId, b.categoryId);
+      const [used] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(homeBookings)
+        .where(and(eq(homeBookings.cityId, b.cityId), eq(homeBookings.categoryId, b.categoryId), eq(homeBookings.slotStart, slot), ne(homeBookings.id, b.id), this.holdsSlot()));
+      if ((used?.n ?? 0) >= cap) throw conflict("slot_full", "That slot just filled up. Pick another time.");
+      const [u] = await tx
+        .update(homeBookings)
+        // The assigned professional may not be free at the new time, so the job is offered again.
+        .set({ slotStart: slot, status: "confirmed", proId: null, rescheduleCount: sql`${homeBookings.rescheduleCount} + 1`, updatedAt: this.now() })
+        .where(and(eq(homeBookings.id, b.id), eq(homeBookings.status, b.status), eq(homeBookings.slotStart, b.slotStart)))
+        .returning();
+      if (!u) throw conflict("status_changed", "Booking changed meanwhile. Refresh and try again.");
+      await this.event(tx, b.id, "confirmed", "customer", `Moved to ${shortWhen(slot)}. Free reschedule.${b.proId ? " Finding a professional for the new time." : ""}`);
+      await this.tellCustomer(tx, u, "booking_rescheduled", {}, `rescheduled:${u.rescheduleCount}`);
+      if (b.proId) {
+        const pro = await tx.query.homePros.findFirst({ where: eq(homePros.id, b.proId), columns: { userId: true } });
+        if (pro) await this.notify.notify(tx, { event: "pro_job_cancelled", userId: pro.userId, vars: { code: bookingCode(b.id), when: shortWhen(b.slotStart) }, dedupeKey: `home:booking:${b.id}:pro-moved:${u.rescheduleCount}` });
+      }
+    });
+    return this.load(id, "customer");
+  }
+
+  /**
+   * customerRefund: the customer cancelled; refund what the rules allow (null = nothing was paid).
+   * Otherwise (admin or system) ZARVA cancelled, so everything paid comes back, fee included.
+   */
+  private async cancelInternal(
+    b: BookingRow, actor: Actor, reason: string, customerRefund: { minutesBefore: number; quote: HomeRefundQuote } | null = null,
+  ): Promise<void> {
+    const minutesBefore = Math.floor((b.slotStart.getTime() - this.now().getTime()) / 60_000);
+    const fullQuote: HomeRefundQuote = {
+      refundBps: 10_000, basePaise: 0, gstPaise: 0, baseRefundPaise: 0, gstRefundPaise: 0, feeKeptPaise: 0, refundPaise: b.totalPaise, chargePaise: 0,
+    };
+    const cancellation: HomeCancellation | null = !b.paid
+      ? null
+      : actor === "customer"
+        ? customerRefund ? { by: "customer", at: this.now().toISOString(), ...customerRefund } : null
+        : { by: actor === "admin" ? "admin" : "system", at: this.now().toISOString(), minutesBefore, quote: fullQuote };
     const done = await this.db.transaction(async (tx) => {
       const [u] = await tx
         .update(homeBookings)
-        .set({ status: "cancelled", cancelReason: reason, updatedAt: this.now() })
+        .set({ status: "cancelled", cancelReason: reason, cancellation, updatedAt: this.now() })
         .where(and(eq(homeBookings.id, b.id), eq(homeBookings.status, b.status)))
         .returning();
       if (!u) return false;
@@ -296,14 +386,20 @@ export class HomeServicesService {
     // Refund outside the transaction: it's a call to the payment provider.
     if (b.paid && b.paymentId) {
       const p = await this.db.query.payments.findFirst({ where: eq(payments.id, b.paymentId) });
+      const wanted = cancellation?.quote.refundPaise ?? 0;
       if (p && (p.status === "captured" || p.status === "partially_refunded")) {
-        const amount = p.amountPaise - p.refundedPaise;
-        await this.payments.refund(p.id, amount);
-        await this.db.update(homeBookings).set({ refundedPaise: amount }).where(eq(homeBookings.id, b.id));
-        await this.event(this.db, b.id, "cancelled", "system", `Refund of ₹${amount / 100} started. Reaches you in 5-7 days.`);
-        await this.tellCustomer(this.db, b, "refund_started", { amount: formatRupees(amount) });
-      } else {
-        await this.event(this.db, b.id, "cancelled", "system", "Refund will be issued once the payment settles.");
+        const amount = Math.min(wanted, p.amountPaise - p.refundedPaise);
+        if (amount > 0) {
+          await this.payments.refund(p.id, amount);
+          await this.db.update(homeBookings).set({ refundedPaise: amount }).where(eq(homeBookings.id, b.id));
+          const kept = b.totalPaise - amount;
+          await this.event(this.db, b.id, "cancelled", "system", `Refund of ${formatRupees(amount)} started. Reaches you in 5-7 days.${kept > 0 ? ` Cancellation charge ${formatRupees(kept)} (see the refund rules).` : ""}`);
+          await this.tellCustomer(this.db, b, "refund_started", { amount: formatRupees(amount) });
+        } else {
+          await this.event(this.db, b.id, "cancelled", "system", "No refund: cancelled too close to the slot under the refund rules.");
+        }
+      } else if (wanted > 0) {
+        await this.event(this.db, b.id, "cancelled", "system", `Refund of ${formatRupees(wanted)} will be issued once the payment settles.`);
       }
     }
   }
@@ -383,6 +479,39 @@ export class HomeServicesService {
     }
   }
 
+  async proCancelStats(userId: string): Promise<HomePartnerCancelStats> {
+    const pro = await this.activePro(userId);
+    return this.cancellations.stats(this.db, pro.id);
+  }
+
+  /**
+   * A professional drops a job they accepted. The customer keeps the booking: it goes back to the
+   * job list for another professional. Counts toward the daily and weekly cancellation limits.
+   */
+  async proCancel(userId: string, bookingId: string, reason: string): Promise<HomePartnerCancelStats> {
+    const pro = await this.activePro(userId);
+    const b = await this.db.query.homeBookings.findFirst({ where: and(eq(homeBookings.id, bookingId), eq(homeBookings.proId, pro.id)) });
+    if (!b) throw notFound("Job");
+    if (!PRO_CANCELLABLE.includes(b.status)) throw badRequest("cannot_cancel", "A job can't be cancelled after you have started it. Call ZARVA support.");
+    const p = await this.policy.get();
+    const before = await this.cancellations.stats(this.db, pro.id);
+    if (!before.canCancel) {
+      throw new AppError(403, "weekly_cancel_limit", `You have cancelled ${before.week} jobs this week, the most allowed (${p.partnerMaxCancelsPerWeek}). Please do this job, or call ZARVA support.`);
+    }
+    await this.db.transaction(async (tx) => {
+      const [u] = await tx
+        .update(homeBookings)
+        .set({ status: "confirmed", proId: null, updatedAt: this.now() })
+        .where(and(eq(homeBookings.id, b.id), eq(homeBookings.proId, pro.id), eq(homeBookings.status, b.status)))
+        .returning();
+      if (!u) throw conflict("status_changed", "Job changed meanwhile. Refresh.");
+      await this.cancellations.record(tx, pro.id, b.id, reason);
+      await this.event(tx, b.id, "confirmed", "pro", "Your professional can't make it. We are finding another one.");
+      await this.tellCustomer(tx, b, "pro_changed", {}, `pro-changed:${pro.id}`);
+    });
+    return this.cancellations.stats(this.db, pro.id);
+  }
+
   async proUpdate(userId: string, bookingId: string, to: HomeBookingStatus, startCode: string | undefined): Promise<HomeBooking> {
     const pro = await this.activePro(userId);
     const b = await this.db.query.homeBookings.findFirst({ where: and(eq(homeBookings.id, bookingId), eq(homeBookings.proId, pro.id)) });
@@ -460,7 +589,7 @@ export class HomeServicesService {
   }
 
   /** SMS / WhatsApp to the customer who made the booking. `vars.code` and `vars.when` are filled in here. */
-  private async tellCustomer<E extends "booking_confirmed" | "pro_assigned" | "pro_on_the_way" | "job_completed" | "booking_cancelled" | "refund_started">(
+  private async tellCustomer<E extends "booking_confirmed" | "pro_assigned" | "pro_on_the_way" | "job_completed" | "booking_cancelled" | "refund_started" | "booking_rescheduled" | "pro_changed">(
     db: Db | Tx, b: BookingRow, event: E, vars: Record<string, string>, key: string = event,
   ): Promise<void> {
     await this.notify.notify(db, {
@@ -490,6 +619,8 @@ export class HomeServicesService {
       b.proId ? this.db.query.homePros.findFirst({ where: eq(homePros.id, b.proId) }) : Promise.resolve(undefined),
     ]);
     const proUser = pro && view !== "preview" ? await this.db.query.users.findFirst({ where: eq(users.id, pro.userId) }) : undefined;
+    const policy = view === "customer" ? await this.policy.get() : null;
+    const cancelInfo = policy ? this.cancelInfo(b, policy) : undefined;
     const proRating = pro && view === "customer" ? (await this.reviews.proSummaries([pro.id])).get(pro.id) : undefined;
     const closed = b.status === "completed";
     const invoiceNumber = closed && (view === "customer" || view === "admin") ? await this.invoices.numberFor(b.id) : null;
@@ -528,7 +659,10 @@ export class HomeServicesService {
       ...(view === "customer" || view === "admin" ? { invoiceNumber, hasInvoice: closed } : {}),
       ...(review ? { review } : {}),
       customerNote: b.customerNote,
-      canCancel: view === "customer" ? this.canCustomerCancel(b) : false,
+      canCancel: cancelInfo?.canCancel ?? false,
+      ...(cancelInfo ? { cancelInfo } : {}),
+      rescheduleCount: b.rescheduleCount,
+      cancellation: view === "preview" ? null : (b.cancellation as HomeCancellation | null),
       events: view === "preview" ? [] : events.map((e) => ({ status: e.status, note: e.note, at: e.createdAt.toISOString() })),
       createdAt: b.createdAt.toISOString(),
     };

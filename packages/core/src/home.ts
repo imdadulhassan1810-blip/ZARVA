@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { HomeCancelInfo, HomeCancellation, HomePartnerCancelStats } from "./home-policy";
 
 /**
  * Home services (vertical id "home"): shared types, pricing and slot rules.
@@ -19,8 +20,6 @@ export const HOME_RULES = {
   bookingWindowDays: 7,
   /** An unpaid online booking holds its slot this long, then frees it. */
   paymentHoldMinutes: 15,
-  /** Free cancellation until this long before the slot. */
-  freeCancelMinutes: 120,
   maxItemsPerBooking: 10,
   maxQtyPerItem: 5,
 } as const;
@@ -49,6 +48,10 @@ export const proNextStatus: Partial<Record<HomeBookingStatus, HomeBookingStatus>
   in_progress: "completed",
 };
 
+/**
+ * "online" is the only way to book: every booking is paid in full up front.
+ * "after_service" (cash to the professional) is switched off; it stays only for bookings made before.
+ */
 export type HomePayMode = "online" | "after_service";
 /** draft: filling in the sign-up. pending: submitted, waiting for admin. rejected: admin asked for fixes. */
 export type HomeProStatus = "draft" | "pending" | "active" | "rejected" | "suspended";
@@ -94,6 +97,11 @@ export interface HomeBooking {
   /** Customer view of a completed job: their rating, and whether they can (still) rate or change it. */
   review?: HomeBookingReviewState;
   canCancel: boolean;
+  /** Customer view: cancel / reschedule rules for this booking and the refund if cancelled now. */
+  cancelInfo?: HomeCancelInfo;
+  rescheduleCount: number;
+  /** Set once cancelled: who, when, and how the refund was worked out. */
+  cancellation: HomeCancellation | null;
   events: HomeBookingEvent[];
   createdAt: string;
 }
@@ -143,8 +151,9 @@ export interface HomePro {
  *  payout           -(amount), when ZARVA sends money to the pro
  *  payout_reversal  +(amount), when a payout failed and the money is back with ZARVA
  *  adjustment       +/- by an admin, with a note (bonus, penalty, cash dues received)
+ *  cancellation_penalty  -(share of a day's earnings), when the pro cancelled more jobs that day than allowed
  */
-export const homeLedgerKinds = ["job_earning", "cash_collected", "payout", "payout_reversal", "adjustment"] as const;
+export const homeLedgerKinds = ["job_earning", "cash_collected", "payout", "payout_reversal", "adjustment", "cancellation_penalty"] as const;
 export type HomeLedgerKind = (typeof homeLedgerKinds)[number];
 export const homeLedgerLabel: Record<HomeLedgerKind, string> = {
   job_earning: "Job earning",
@@ -152,6 +161,7 @@ export const homeLedgerLabel: Record<HomeLedgerKind, string> = {
   payout: "Paid to you",
   payout_reversal: "Payout failed, returned",
   adjustment: "Adjustment",
+  cancellation_penalty: "Cancellation penalty",
 };
 export interface HomeLedgerEntry {
   id: string; kind: HomeLedgerKind; amountPaise: number; bookingCode: string | null; payoutId: string | null;
@@ -167,6 +177,9 @@ export interface HomeEarnings {
   /** Earned (after commission) in the last 7 days. */
   weekPaise: number;
   jobsThisWeek: number;
+  /** Cancellation penalties in the last 7 days (positive number, already taken off the balance). */
+  penaltiesWeekPaise: number;
+  cancelStats: HomePartnerCancelStats;
   entries: HomeLedgerEntry[];
   payouts: HomePayout[];
 }
@@ -191,7 +204,8 @@ export const homeCreateBookingSchema = z.object({
   addressId: z.string().uuid(),
   slotStart: z.string().datetime({ offset: true }),
   items: z.array(homeCartItemSchema).min(1).max(HOME_RULES.maxItemsPerBooking),
-  payMode: z.enum(["online", "after_service"]),
+  /** Prepaid only. "after_service" is refused with prepaid_only (older app versions may still send it). */
+  payMode: z.enum(["online", "after_service"]).default("online"),
   note: z.string().trim().max(300).optional(),
   /** Same key returns the same booking, so a double-tap never books twice. */
   idempotencyKey: z.string().min(8).max(80),

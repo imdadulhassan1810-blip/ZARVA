@@ -2,7 +2,8 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { formatPhone, homeStatusLabel, type HomeBooking } from "@zarva/core";
+import { formatPhone, formatRupees, homeStatusLabel, type HomeBooking, type HomePolicy } from "@zarva/core";
+import { BookingChanges, CustomerRules } from "../../../../components/CancellationRules";
 import { BookingSummary, StatusChip, when } from "../../../../components/BookingBits";
 import { api, isSignedIn } from "../../../../lib/api";
 import { payForBooking } from "../../../../lib/pay";
@@ -30,8 +31,13 @@ export default function BookingDetail() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isNew, setIsNew] = useState(false);
+  const [policy, setPolicy] = useState<HomePolicy | null>(null);
 
   const load = useCallback(() => api.home.booking(id).then((r) => setB(r.booking)), [id]);
+  const cityId = b?.cityId;
+  useEffect(() => {
+    if (cityId) api.home.catalog(cityId).then((r) => setPolicy(r.policy ?? null)).catch(() => {});
+  }, [cityId]);
 
   useEffect(() => {
     if (!isSignedIn()) return router.replace(`/login?next=/home-services/bookings/${id}`);
@@ -127,12 +133,20 @@ export default function BookingDetail() {
       </ul>
 
       {error && <p className="error" role="alert">{error}</p>}
-      {b.canCancel && (
-        <button className="btn btn-danger" disabled={busy} style={{ marginTop: 16 }} onClick={() => {
-          if (!window.confirm(b.paid ? "Cancel this booking? You'll get a full refund." : "Cancel this booking?")) return;
-          void run(async () => setB((await api.home.cancel(b.id)).booking));
-        }}>Cancel booking</button>
+      <BookingChanges b={b} policy={policy} onChange={setB} />
+      {b.cancellation && (
+        <div className="card stack" style={{ marginTop: 16 }}>
+          <strong>Refund</strong>
+          <span>
+            {b.cancellation.by === "customer"
+              ? `Cancelled ${Math.floor(b.cancellation.minutesBefore / 60)} h ${b.cancellation.minutesBefore % 60} min before the slot.`
+              : "Cancelled by ZARVA, so everything you paid comes back."}
+            {" "}Refund {formatRupees(b.cancellation.quote.refundPaise)}
+            {b.cancellation.quote.chargePaise > 0 ? `, cancellation charge ${formatRupees(b.cancellation.quote.chargePaise)}` : ""}.
+          </span>
+        </div>
       )}
+      {policy && ["pending_payment", "confirmed", "assigned"].includes(b.status) && <div style={{ marginTop: 16 }}><CustomerRules policy={policy} /></div>}
       <div className="card help-strip">
         <span><strong>Need help with this booking?</strong> <span className="muted">Our team replies here in the app.</span></span>
         <Link className="btn btn-ghost" href={`/help/new?booking=${b.id}`}>Get help</Link>

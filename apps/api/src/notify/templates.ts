@@ -32,6 +32,14 @@ export const notifyEvents = {
     vars: ["code", "amount"],
     sms: "ZARVA: Refund of {amount} for booking {code} has started. It reaches your account in 5-7 days.",
   },
+  booking_rescheduled: {
+    vars: ["code", "when"],
+    sms: "ZARVA: Booking {code} is moved to {when}. We will share your professional's details soon.",
+  },
+  pro_changed: {
+    vars: ["code", "when"],
+    sms: "ZARVA: Your professional for booking {code} on {when} can't make it. We are assigning another professional.",
+  },
   // ----- Professional -----
   pro_job_assigned: {
     vars: ["code", "when", "area"],

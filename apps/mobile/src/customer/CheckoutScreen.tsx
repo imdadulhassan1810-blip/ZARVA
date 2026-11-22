@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
-  addressInputSchema, formatRupees, HOME_RULES, type Address, type HomePayMode, type HomeSlotDay,
+  addressInputSchema, formatNotice, formatRupees, HOME_RULES, type Address, type HomeSlotDay,
 } from "@zarva/core";
 import { api } from "../api";
 import {
@@ -19,13 +19,12 @@ const slotLabel = (iso: string) =>
 export function CheckoutScreen() {
   const { t } = useSession();
   const nav = useNavigation<Nav>();
-  const { cart, lines, totals, count, setQty, clearCart, onlinePayment } = useStore();
+  const { cart, lines, totals, count, setQty, clearCart, onlinePayment, policy } = useStore();
   const [addresses, setAddresses] = useState<Address[] | null>(null);
   const [addressId, setAddressId] = useState<string | null>(null);
   const [days, setDays] = useState<HomeSlotDay[] | null>(null);
   const [day, setDay] = useState(0);
   const [slot, setSlot] = useState<string | null>(null);
-  const [payMode, setPayMode] = useState<HomePayMode>("after_service");
   const [sheet, setSheet] = useState<"address" | "slot" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,14 +55,18 @@ export function CheckoutScreen() {
     setError(null);
     try {
       const r = await api.home.createBooking({
-        cityId: CITY, addressId, slotStart: slot, payMode, idempotencyKey: key,
+        cityId: CITY, addressId, slotStart: slot, payMode: "online", idempotencyKey: key,
         items: Object.entries(cart.items).map(([serviceId, qty]) => ({ serviceId, qty })),
       });
       if (r.payment) {
         const orderId = String(r.payment.clientPayload.order_id ?? "");
         if (orderId.startsWith("mock_order_")) {
+          // Development: the mock checkout stands in for Razorpay.
           const { confirmation } = await api.mockPaymentSuccess(orderId);
           await api.home.confirmPayment(r.booking.id, confirmation);
+        } else {
+          // The Razorpay sheet needs react-native-razorpay in a store build (not in Expo Go yet).
+          throw new Error("Paying inside the app is coming soon. Your slot is held for 15 minutes: finish payment on the ZARVA website under Bookings.");
         }
       }
       haptic.success();
@@ -85,8 +88,8 @@ export function CheckoutScreen() {
     );
   }
 
-  const cta = busy ? "Booking…" : !addressId ? "Add an address" : !slot ? "Pick a time slot" : payMode === "online" ? `Pay ${formatRupees(totals.totalPaise)}` : "Confirm booking";
-  const ctaPress = !addressId ? () => (addresses?.length ? setSheet("address") : nav.navigate("AddAddress")) : !slot ? () => setSheet("slot") : book;
+  const cta = busy ? "Booking…" : !onlinePayment ? "Bookings paused" : !addressId ? "Add an address" : !slot ? "Pick a time slot" : `Pay ${formatRupees(totals.totalPaise)} and book`;
+  const ctaPress = !onlinePayment ? () => undefined : !addressId ? () => (addresses?.length ? setSheet("address") : nav.navigate("AddAddress")) : !slot ? () => setSheet("slot") : book;
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
@@ -114,18 +117,17 @@ export function CheckoutScreen() {
           action={slot ? "Change" : "Select"} onPress={() => setSheet("slot")} />
 
         <Text style={{ color: t.text, fontSize: 17, fontWeight: "800", marginTop: 4 }}>Payment</Text>
-        <View style={{ gap: 10 }}>
-          {((onlinePayment ? ["after_service", "online"] : ["after_service"]) as HomePayMode[]).map((m) => (
-            <Card key={m} t={t} selected={payMode === m} onPress={() => setPayMode(m)} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <Ionicons name={m === "online" ? "card" : "cash"} size={22} color={payMode === m ? t.primary : t.muted} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: t.text, fontWeight: "700" }}>{m === "online" ? "Pay now (UPI / card)" : "Pay after service"}</Text>
-                <Text style={{ color: t.muted, fontSize: 13 }}>{m === "online" ? "Full refund if you cancel 2+ hours before." : "Cash or UPI to the professional when the job is done."}</Text>
-              </View>
-              <Ionicons name={payMode === m ? "radio-button-on" : "radio-button-off"} size={22} color={payMode === m ? t.primary : t.muted} />
-            </Card>
-          ))}
-        </View>
+        {onlinePayment ? (
+          <Card t={t} selected style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <Ionicons name="card" size={22} color={t.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: t.text, fontWeight: "700" }}>Pay online now (UPI / card)</Text>
+              <Text style={{ color: t.muted, fontSize: 13 }}>Every booking is paid in advance. Never pay the professional in cash.</Text>
+            </View>
+          </Card>
+        ) : (
+          <ErrorBanner t={t} message="Online payment isn't live yet, so bookings are paused. Please check back soon." />
+        )}
 
         <Text style={{ color: t.text, fontSize: 17, fontWeight: "800", marginTop: 4 }}>Bill summary</Text>
         <Card t={t} style={{ gap: 8 }}>
@@ -136,7 +138,9 @@ export function CheckoutScreen() {
         </Card>
         <View style={{ flexDirection: "row", gap: 8, alignItems: "center", paddingHorizontal: 4 }}>
           <Ionicons name="shield-checkmark" size={16} color={t.success} />
-          <Text style={{ color: t.muted, fontSize: 13, flex: 1 }}>Free cancellation up to 2 hours before your slot.</Text>
+          <Text style={{ color: t.muted, fontSize: 13, flex: 1 }}>
+            Free reschedule, and cancel with a refund, until {formatNotice(policy.customerCutoffMinutes)} before your slot. The earlier you cancel, the more you get back (up to 100% of the service price). The convenience fee isn&apos;t refunded.
+          </Text>
         </View>
         {error && <ErrorBanner t={t} message={error} />}
       </ScrollView>
@@ -202,7 +206,7 @@ function StepCard({ t, icon, title, value, done, loading, action, onPress }: {
 }
 
 /** Date strip plus 1-hour slot grid, in a bottom sheet. Only days and slots the server offers are shown. */
-function SlotSheet({ t, visible, days, day, slot, onDay, onPick, onClose }: {
+export function SlotSheet({ t, visible, days, day, slot, onDay, onPick, onClose }: {
   t: ReturnType<typeof useSession>["t"]; visible: boolean; days: HomeSlotDay[]; day: number; slot: string | null;
   onDay: (i: number) => void; onPick: (s: string) => void; onClose: () => void;
 }) {

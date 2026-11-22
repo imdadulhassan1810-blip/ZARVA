@@ -17,7 +17,7 @@ export const homeBookingStatusEnum = pgEnum("home_booking_status", [
 export const homePayModeEnum = pgEnum("home_pay_mode", ["online", "after_service"]);
 // draft/rejected were added later; Postgres appends enum values, so the order here matches the database.
 export const homeProStatusEnum = pgEnum("home_pro_status", ["pending", "active", "suspended", "draft", "rejected"]);
-export const homeLedgerKindEnum = pgEnum("home_ledger_kind", ["job_earning", "cash_collected", "payout", "payout_reversal", "adjustment"]);
+export const homeLedgerKindEnum = pgEnum("home_ledger_kind", ["job_earning", "cash_collected", "payout", "payout_reversal", "adjustment", "cancellation_penalty"]);
 export const homePayoutStatusEnum = pgEnum("home_payout_status", ["processing", "manual", "paid", "failed"]);
 
 const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
@@ -137,6 +137,10 @@ export const homeBookings = pgTable(
     startCode: text("start_code").notNull(),
     customerNote: text("customer_note"),
     cancelReason: text("cancel_reason"),
+    /** HomeCancellation: who cancelled, how long before the slot, and the refund worked out from the rules then. */
+    cancellation: jsonb("cancellation"),
+    /** Free reschedules used (limit in the cancellation rules). */
+    rescheduleCount: integer("reschedule_count").notNull().default(0),
     idempotencyKey: text("idempotency_key").notNull(),
     ...timestamps,
   },
@@ -293,3 +297,47 @@ export const homeInvoices = pgTable("home_invoices", {
   /** Everything printed on the invoice: seller, buyer, lines, tax split. See invoices.ts InvoiceData. */
   data: jsonb("data").notNull(),
 });
+
+/** Cancellation rules and other settings the ZARVA team edits in admin. One row per key, value is JSON. */
+export const homeSettings = pgTable("home_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  /** admin_accounts.id */
+  updatedBy: uuid("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Every time a professional drops a job they had accepted. Counted per India-time day and Monday-Sunday week. */
+export const homeProCancellations = pgTable(
+  "home_pro_cancellations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    proId: uuid("pro_id").notNull().references(() => homePros.id),
+    bookingId: uuid("booking_id").notNull().references(() => homeBookings.id, { onDelete: "cascade" }),
+    /** IST date "YYYY-MM-DD" of the cancellation. */
+    day: text("day").notNull(),
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("home_pro_cancellations_pro_day_idx").on(t.proId, t.day)],
+);
+
+/**
+ * One row per professional per day on which they cancelled more jobs than allowed, written after the
+ * day ends (India time) so the day's earnings are known. The matching ledger row takes it off the balance.
+ */
+export const homeProPenalties = pgTable(
+  "home_pro_penalties",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    proId: uuid("pro_id").notNull().references(() => homePros.id),
+    day: text("day").notNull(),
+    cancellations: integer("cancellations").notNull(),
+    penaltyBps: integer("penalty_bps").notNull(),
+    /** That day's job earnings (after commission) the penalty is a share of. */
+    dayEarningsPaise: integer("day_earnings_paise").notNull(),
+    penaltyPaise: integer("penalty_paise").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("home_pro_penalties_pro_day_idx").on(t.proId, t.day)],
+);

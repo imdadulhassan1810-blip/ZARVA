@@ -4,10 +4,12 @@ import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-
 import { formatPhone, formatRupees, homeReviewTagLabel, type HomeBooking, type HomeBookingStatus } from "@zarva/core";
 import { api } from "../api";
 import type { Theme } from "../theme";
-import { Button, Card, ConfirmSheet, EmptyState, ErrorBanner, haptic, IconButton, Ionicons, Pill, SkeletonCard, type IconName } from "../ui";
+import { Button, Card, EmptyState, ErrorBanner, haptic, IconButton, Ionicons, Pill, SkeletonCard, type IconName } from "../ui";
 import { useSession, type CustomerStackParams } from "./CustomerApp";
 import { RateForm, RatingBadge, Stars } from "../care";
 import type { Nav } from "./HomeScreen";
+import { BookingChanges, RulesCard } from "./BookingChanges";
+import { useStore } from "./store";
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
@@ -96,7 +98,7 @@ export function BookingScreen() {
   const [b, setB] = useState<HomeBooking | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [confirmCancel, setConfirmCancel] = useState(false);
+  const { policy } = useStore();
   const load = useCallback(() => api.home.booking(params.id).then((r) => { setB(r.booking); setError(null); }).catch((e: Error) => setError(e.message)), [params.id]);
   useEffect(() => {
     void load();
@@ -262,11 +264,19 @@ export function BookingScreen() {
       </Card>
 
       {error && <ErrorBanner t={t} message={error} />}
-      {b.canCancel && <Button t={t} variant="outline" icon="close-circle-outline" title="Cancel booking" onPress={() => setConfirmCancel(true)} />}
-      <ConfirmSheet t={t} visible={confirmCancel} onClose={() => setConfirmCancel(false)} destructive
-        title="Cancel this booking?" body={b.paid ? "You'll get a full refund to your original payment method." : "The professional will be told not to come."}
-        confirm="Yes, cancel booking" cancel="Keep booking"
-        onConfirm={() => void api.home.cancel(b.id).then((r) => { haptic.success(); setB(r.booking); }).catch((e: Error) => { haptic.error(); setError(e.message); })} />
+      <BookingChanges t={t} b={b} policy={policy} onChange={setB} />
+      {b.cancellation && (
+        <Card t={t} style={{ gap: 4 }}>
+          <Text style={{ color: t.text, fontWeight: "800" }}>Refund</Text>
+          <Text style={{ color: t.muted, fontSize: 13 }}>
+            {b.cancellation.by === "customer"
+              ? `Cancelled ${Math.floor(b.cancellation.minutesBefore / 60)} h ${b.cancellation.minutesBefore % 60} min before the slot. `
+              : "Cancelled by ZARVA, so everything you paid comes back. "}
+            Refund {formatRupees(b.cancellation.quote.refundPaise)}{b.cancellation.quote.chargePaise > 0 ? `, cancellation charge ${formatRupees(b.cancellation.quote.chargePaise)}` : ""}.
+          </Text>
+        </Card>
+      )}
+      {["pending_payment", "confirmed", "assigned"].includes(b.status) && <RulesCard t={t} policy={policy} />}
     </ScrollView>
   );
 }

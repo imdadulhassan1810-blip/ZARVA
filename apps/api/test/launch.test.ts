@@ -55,16 +55,22 @@ async function approvedPro(phone = "9000000001", name = "Subrata Mondal") {
   expect(ok.body.pro.status).toBe("active");
   return { s, id: a.body.pro.id as string };
 }
-async function book(s: Session, payMode: "online" | "after_service", hour = 11, services: [string, number][] = [["fan-repair", 1]]) {
+/** "online": booked, waiting for payment. "paid": booked and paid (confirmed). Every booking is prepaid. */
+async function book(s: Session, mode: "online" | "paid", hour = 11, services: [string, number][] = [["fan-repair", 1]]) {
   const c = await catalog();
   const addr = await req("POST", "/v1/me/addresses", s, {
     name: "Riya Sen", phone: "9876543210", line1: "12 Nehru Avenue", line2: "Benachity", city: "Durgapur", state: "West Bengal", pincode: "713216",
   });
   const r = await req("POST", `${P}/bookings`, s, {
     cityId: "durgapur", addressId: addr.body.address.id, slotStart: istInstant("2026-11-23", hour).toISOString(),
-    items: services.map(([slug, qty]) => ({ serviceId: c.svc(slug).id, qty })), payMode, idempotencyKey: `k-${Math.random()}`,
+    items: services.map(([slug, qty]) => ({ serviceId: c.svc(slug).id, qty })), payMode: "online", idempotencyKey: `k-${Math.random()}`,
   });
   expect(r.status).toBe(201);
+  if (mode === "paid") {
+    const paid = await payWithMock(s, r.body.booking.id, r.body.payment.clientPayload.order_id);
+    expect(paid.body.booking.status).toBe("confirmed");
+    r.body.booking = paid.body.booking;
+  }
   return r.body as { booking: { id: string; code: string; startCode: string; totalPaise: number; subtotalPaise: number }; payment: { clientPayload: { order_id: string } } | null };
 }
 async function payWithMock(s: Session, bookingId: string, orderId: string) {
@@ -110,12 +116,12 @@ describe("SMS and WhatsApp booking updates", () => {
     const cust = await login("9876500001");
     await approvedPro();
     await t.messages();
-    await book(cust, "after_service");
+    await book(cust, "paid");
     expect((await t.messages()).map((m) => m.channel)).toEqual(["sms"]);
 
     const me = await req("PATCH", "/v1/me", cust, { whatsappOptIn: true });
     expect(me.body.user.whatsappOptIn).toBe(true);
-    await book(cust, "after_service", 12);
+    await book(cust, "paid", 12);
     expect((await t.messages()).map((m) => m.channel).sort()).toEqual(["sms", "whatsapp"]);
   });
 
@@ -136,7 +142,7 @@ describe("SMS and WhatsApp booking updates", () => {
     const pro = await approvedPro();
     await t.messages();
     const cust = await login("9876500001");
-    const { booking } = await book(cust, "after_service");
+    const { booking } = await book(cust, "paid");
     const admin = await login(ADMIN);
     await req("POST", `${P}/admin/bookings/${booking.id}/assign`, admin, { proId: pro.id });
     const msgs = await t.messages();
@@ -151,7 +157,7 @@ describe("SMS and WhatsApp booking updates", () => {
     await t.messages();
     t.sms.failTimes = 1;
     const cust = await login("9876500001");
-    await book(cust, "after_service");
+    await book(cust, "paid");
     expect(await t.messages()).toEqual([]); // first try failed
     clock.t += 31_000; // backoff 30 s
     expect((await t.messages()).map((m) => m.event)).toEqual(["booking_confirmed"]);
@@ -284,10 +290,12 @@ describe("pro earnings, commission and payouts", () => {
     expect(e.entries[0]).toMatchObject({ kind: "job_earning", grossPaise: 19900, commissionPaise: 3980, bookingCode: booking.code });
   });
 
-  it("cash job: the pro holds the cash, so they owe ZARVA the commission and fee", async () => {
+  it("cash job (only bookings made before prepaid-only): the pro holds the cash, so they owe ZARVA the commission and fee", async () => {
     const pro = await approvedPro();
     const cust = await login("9876500001");
-    const { booking } = await book(cust, "after_service");
+    const { booking } = await book(cust, "paid");
+    // An old pay-after-service booking, as it would be in the database from before prepaid-only.
+    await t.sql`update home_bookings set pay_mode = 'after_service', paid = false where id = ${booking.id}`;
     await doJob(pro.s, booking.id, booking.startCode);
     const e = (await req("GET", `${P}/pro/earnings`, pro.s)).body;
     expect(e.balancePaise).toBe(15920 - 22800); // -₹68.80 = commission ₹39.80 + fee ₹29

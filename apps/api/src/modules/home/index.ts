@@ -7,6 +7,8 @@ import { PartnerService } from "./partners";
 import { EarningsService } from "./earnings";
 import { InvoiceService } from "./invoices";
 import { ReviewService } from "./reviews";
+import { PolicyService } from "./policy";
+import { CancellationService } from "./cancellations";
 import { bookingCode } from "@zarva/core";
 import { and, eq } from "drizzle-orm";
 import { homeBookings, homeCategories } from "./schema";
@@ -16,13 +18,15 @@ export const homeModule: ZarvaModule<FastifyInstance> = {
   manifest: { id: "home", name: verticals.home.label, version: "1.0.0", tagline: "Cleaning, repairs and beauty at home" },
   register({ app, prefix }) {
     const { notify, payouts, vault, payments } = app.services;
-    const earnings = new EarningsService(app.db, payouts, notify, app.now);
+    const policy = new PolicyService(app.db);
+    const cancellations = new CancellationService(app.db, policy, app.now);
+    const earnings = new EarningsService(app.db, payouts, notify, app.now, cancellations);
     const invoices = new InvoiceService(app.db, app.config, app.now);
     const reviews = new ReviewService(app.db, app.now);
-    const svc = new HomeServicesService(app.db, payments, app.now, notify, earnings, invoices, reviews, { onlinePayments: app.config.onlinePayments });
+    const svc = new HomeServicesService(app.db, payments, app.now, notify, earnings, invoices, reviews, policy, cancellations, { onlinePayments: app.config.onlinePayments });
     const partners = new PartnerService(app.db, vault, notify, app.now);
     app.get(`${prefix}/status`, async () => ({ module: "home", ready: true }));
-    homeRoutes(app, prefix, { svc, partners, earnings, invoices, reviews });
+    homeRoutes(app, prefix, { svc, partners, earnings, invoices, reviews, policy });
     // Support tickets can point at a home booking: only the customer's own, labelled for the team.
     app.services.support.registerReference("home", async (userId, referenceId) => {
       const [b] = await app.db

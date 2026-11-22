@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   formatPhone, formatRupees, homeTotals, HOME_RULES,
-  type Address, type HomePayMode, type HomeService, type HomeSlotDay,
+  type Address, type HomePolicy, type HomeService, type HomeSlotDay,
 } from "@zarva/core";
+import { CustomerRules } from "../../../components/CancellationRules";
 import { api, isSignedIn } from "../../../lib/api";
 import { clearCart, loadCart, type Cart } from "../../../lib/cart";
 import { payForBooking } from "../../../lib/pay";
@@ -20,9 +21,10 @@ export default function Checkout() {
   const [days, setDays] = useState<HomeSlotDay[]>([]);
   const [day, setDay] = useState(0);
   const [slot, setSlot] = useState<string | null>(null);
-  const [payMode, setPayMode] = useState<HomePayMode>("online");
-  // The server switches online payment off while Razorpay is on test keys (no real money would move).
+  // Prepaid only. The server switches online payment off while Razorpay is on test keys (no real money
+  // would move); then booking is paused, because there is no pay-after-service any more.
   const [onlineOk, setOnlineOk] = useState(true);
+  const [policy, setPolicy] = useState<HomePolicy | null>(null);
   const [note, setNote] = useState("");
   // null until we know the account's current choice. Never pre-ticked: WhatsApp needs a real opt-in.
   const [whatsapp, setWhatsapp] = useState<boolean | null>(null);
@@ -45,7 +47,8 @@ export default function Checkout() {
     setCart(c);
     api.home.catalog(c.cityId).then((r) => {
       setServices(r.services);
-      if (r.onlinePayment === false) { setOnlineOk(false); setPayMode("after_service"); }
+      if (r.onlinePayment === false) setOnlineOk(false);
+      setPolicy(r.policy ?? null);
     }).catch((e: Error) => setError(e.message));
     api.listAddresses().then((r) => {
       setAddresses(r.addresses);
@@ -79,7 +82,7 @@ export default function Checkout() {
         setWhatsappWas(whatsapp);
       }
       const r = await api.home.createBooking({
-        cityId: cart.cityId, addressId, slotStart: slot, payMode, note: note.trim() || undefined, idempotencyKey,
+        cityId: cart.cityId, addressId, slotStart: slot, payMode: "online", note: note.trim() || undefined, idempotencyKey,
         items: Object.entries(cart.items).map(([serviceId, qty]) => ({ serviceId, qty })),
       });
       clearCart();
@@ -152,16 +155,14 @@ export default function Checkout() {
 
       <h2>3. Payment</h2>
       <div className="stack">
-        {onlineOk && (
-          <label className={`card choice ${payMode === "online" ? "choice-on" : ""}`}>
-            <input type="radio" name="pay" checked={payMode === "online"} onChange={() => setPayMode("online")} />
-            <div><strong>Pay now</strong><div className="muted" style={{ fontWeight: 400 }}>UPI, cards or netbanking. Full refund if you cancel 2+ hours before.</div></div>
-          </label>
+        {onlineOk ? (
+          <div className="card choice choice-on">
+            <div><strong>Pay online now</strong><div className="muted" style={{ fontWeight: 400 }}>UPI, cards or netbanking. Every booking is paid in advance; never pay the professional in cash.</div></div>
+          </div>
+        ) : (
+          <p className="card error" role="alert">Online payment isn't live yet, so bookings are paused. Please check back soon.</p>
         )}
-        <label className={`card choice ${payMode === "after_service" ? "choice-on" : ""}`}>
-          <input type="radio" name="pay" checked={payMode === "after_service"} onChange={() => setPayMode("after_service")} />
-          <div><strong>Pay after service</strong><div className="muted" style={{ fontWeight: 400 }}>Cash or UPI to the professional when the job is done.</div></div>
-        </label>
+        {policy && <CustomerRules policy={policy} />}
         {whatsapp !== null && (
           <label className="choice" style={{ fontSize: 15 }}>
             <input type="checkbox" checked={whatsapp} onChange={(e) => setWhatsapp(e.target.checked)} />
@@ -184,8 +185,8 @@ export default function Checkout() {
       </div>
 
       {error && <p className="error" role="alert">{error}</p>}
-      <button className="btn" style={{ width: "100%", marginTop: 16 }} disabled={busy || !addressId || !slot} onClick={book}>
-        {busy ? "Booking…" : !addressId ? "Add an address first" : !slot ? "Pick a time slot" : payMode === "online" ? `Pay ${formatRupees(totals.totalPaise)} and book` : "Confirm booking"}
+      <button className="btn" style={{ width: "100%", marginTop: 16 }} disabled={busy || !addressId || !slot || !onlineOk} onClick={book}>
+        {busy ? "Booking…" : !onlineOk ? "Bookings paused" : !addressId ? "Add an address first" : !slot ? "Pick a time slot" : `Pay ${formatRupees(totals.totalPaise)} and book`}
       </button>
     </div>
   );

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { HOME_RULES, formatRupees } from "./home";
+import { DEFAULT_HOME_POLICY, formatNotice, refundSlabLines } from "./home-policy";
 
 /**
  * Customer support and feedback. Platform-wide (not one vertical): a ticket can point at a booking
@@ -106,14 +107,15 @@ export const supportFaq: FaqSection[] = [
   {
     title: "Cancellation and refunds",
     items: [
-      { q: "Can I cancel?", a: `Yes, free, until ${HOME_RULES.freeCancelMinutes / 60} hours before your slot, from the booking page. After that, raise a ticket and our team will help.` },
-      { q: "When do I get my refund?", a: "If you paid online, the refund starts as soon as the booking is cancelled and reaches your bank or UPI app in 5-7 working days." },
+      { q: "Can I cancel or reschedule?", a: `Yes, from the booking page, until ${formatNotice(DEFAULT_HOME_POLICY.customerCutoffMinutes)} before your slot. Rescheduling is free. Inside ${formatNotice(DEFAULT_HOME_POLICY.customerCutoffMinutes)} the booking can't be changed; raise a ticket and our team will help.` },
+      { q: "How much do I get back if I cancel?", a: `It depends on how early you cancel. ${refundSlabLines(DEFAULT_HOME_POLICY).join(". ")}. The GST on the service is refunded in the same share. The convenience fee is not refunded. The booking page shows your exact refund before you confirm.` },
+      { q: "When do I get my refund?", a: "The refund starts as soon as the booking is cancelled and reaches your bank or UPI app in 5-7 working days." },
     ],
   },
   {
     title: "Payment and bills",
     items: [
-      { q: "How do I pay?", a: `Pay after the service in cash or UPI to the professional, or online where available. Orders above ${formatRupees(HOME_RULES.freeFeeAbovePaise)} have no convenience fee; smaller orders pay ${formatRupees(HOME_RULES.convenienceFeePaise)}.` },
+      { q: "How do I pay?", a: `You pay online (UPI, card or net banking) when you book. Don't pay the professional in cash. Orders above ${formatRupees(HOME_RULES.freeFeeAbovePaise)} have no convenience fee; smaller orders pay ${formatRupees(HOME_RULES.convenienceFeePaise)}.` },
       { q: "Are spare parts included?", a: "No. The price covers the service. Spare parts are extra and billed at MRP. Never pay more than the price in the app for the service itself; if asked, raise a ticket." },
       { q: "How do I get a bill or invoice?", a: "Once a job is completed, open the booking and tap Download invoice. You get a PDF with the services, amount and how you paid." },
     ],

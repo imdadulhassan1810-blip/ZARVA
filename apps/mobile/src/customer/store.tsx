@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { DEFAULT_HOME_POLICY, HOME_RULES, homeTotals, type HomeCategory, type HomePolicy, type HomeService } from "@zarva/core";
+import { DEFAULT_HOME_POLICY, HOME_RULES, homeTotals, homeUnitPrice, type HomeCategory, type HomePolicy, type HomeService } from "@zarva/core";
 import { api } from "../api";
 
 export const CITY = "durgapur";
@@ -19,6 +19,8 @@ interface Store {
   lines: Line[];
   count: number;
   totals: ReturnType<typeof homeTotals>;
+  /** What the customer pays for one of this service before charges and GST: the pro's quote + markup. */
+  priceOf: (s: HomeService) => number;
   /** Returns false when the change needs a "start a new cart?" confirmation first. */
   setQty: (s: HomeService, qty: number, force?: boolean) => boolean;
   clearCart: () => void;
@@ -59,7 +61,8 @@ export function CustomerStore({ children }: { children: ReactNode }) {
     });
     const count = lines.reduce((n, l) => n + l.qty, 0);
     return {
-      categories, services, onlinePayment, policy, catalogError, reloadCatalog, cart, lines, count, totals: homeTotals(lines),
+      categories, services, onlinePayment, policy, catalogError, reloadCatalog, cart, lines, count, totals: homeTotals(lines, policy),
+      priceOf: (s) => homeUnitPrice(s.pricePaise, policy),
       setQty(s, qty, force) {
         const same = cart.categoryId === s.categoryId;
         if (!same && count > 0 && qty > 0 && !force) return false;

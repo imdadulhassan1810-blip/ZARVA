@@ -78,7 +78,7 @@ export default function Admin() {
           <button key={t} role="tab" aria-selected={tab === t} className={`day ${tab === t ? "day-on" : ""}`} onClick={() => setTab(t)}>
             {t === "bookings" ? "Bookings" : t === "support" ? "Support" : t === "reviews" ? "Reviews" : t === "feedback" ? "Feedback"
               : t === "pros" ? `Professionals${pros.some((p) => p.status === "pending") ? ` (${pros.filter((p) => p.status === "pending").length} to review)` : ""}`
-              : t === "payouts" ? `Payouts${balances.payouts.some((p) => p.status === "manual") ? " •" : ""}` : t === "prices" ? "Prices & commission" : t === "rules" ? "Cancellation rules" : "Team"}
+              : t === "payouts" ? `Payouts${balances.payouts.some((p) => p.status === "manual") ? " •" : ""}` : t === "prices" ? "Service prices" : t === "rules" ? "Pricing & cancellation" : "Team"}
           </button>
         ))}
       </div>
@@ -102,6 +102,11 @@ export default function Admin() {
                     <strong>{b.code} · {b.categoryName} · {when(b)}</strong><StatusChip b={b} />
                   </div>
                   <div>{itemsLine(b)} · <strong>{formatRupees(b.totalPaise)}</strong> · {b.payMode === "online" ? (b.paid ? "paid online" : "unpaid") : "pay after service"}</div>
+                  {b.pricing && (
+                    <div className="muted" style={{ fontSize: 13 }}>
+                      Base {formatRupees(b.pricing.basePaise)} · Operations {formatRupees(b.pricing.serviceChargePaise)} · Tech {formatRupees(b.pricing.platformChargePaise)}{b.pricing.minFeeApplied ? " (minimum fee)" : ""} · GST {formatRupees(b.pricing.gstPaise)} · pro earns {formatRupees(b.pricing.proEarningPaise)}
+                    </div>
+                  )}
                   <div className="muted">{b.address.name}, {formatPhone(b.address.phone)} · {[b.address.line1, b.address.line2, b.address.pincode].filter(Boolean).join(", ")}</div>
                   {b.cancellation && (
                     <div className="muted">
@@ -150,7 +155,7 @@ export default function Admin() {
 
       {tab === "prices" && (
         <div className="stack" style={{ marginTop: 12 }}>
-          <p className="muted" style={{ margin: 0 }}>Prices include GST. Commission is ZARVA&apos;s share of the job price (the convenience fee is always ZARVA&apos;s). It applies to jobs completed after you save.</p>
+          <p className="muted" style={{ margin: 0 }}>Each price is the professional&apos;s quote, which is what the professional earns. Customers pay the quote plus the markup, the service and platform charges and GST (set them in Pricing &amp; cancellation). Commission % only applies to bookings made before 22 Nov 2026, when prices included GST.</p>
           {cats.map((c) => {
             const ac = adminCats.find((x) => x.id === c.id);
             const pct = commission[c.id] ?? (ac ? String(ac.commissionBps / 100) : "");

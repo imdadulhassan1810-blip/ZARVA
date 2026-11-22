@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { HomeCancelInfo, HomeCancellation, HomePartnerCancelStats } from "./home-policy";
+import type { HomeCancelInfo, HomeCancellation, HomePartnerCancelStats, HomePriceBreakdown } from "./home-policy";
 
 /**
  * Home services (vertical id "home"): shared types, pricing and slot rules.
@@ -8,9 +8,6 @@ import type { HomeCancelInfo, HomeCancellation, HomePartnerCancelStats } from ".
  */
 
 export const HOME_RULES = {
-  /** Orders below this pay a convenience fee. */
-  freeFeeAbovePaise: 29900,
-  convenienceFeePaise: 2900,
   minOrderPaise: 9900,
   /** Slot start hours in IST: 08:00 ... 19:00. Each slot is a 1-hour arrival window. */
   firstSlotHour: 8,
@@ -80,9 +77,15 @@ export interface HomeBooking {
   slotStart: string;
   address: HomeAddressSnapshot;
   items: HomeBookingItem[];
+  /** Base price before GST (legacy bookings: the GST-inclusive item total). */
   subtotalPaise: number;
+  /** Non-refundable charges: service + platform charges and their GST (legacy: convenience fee). */
   feePaise: number;
   totalPaise: number;
+  /** How the total is made up. null for bookings made before prices became pre-GST. */
+  pricing: HomePriceBreakdown | null;
+  /** Partner and admin views: what the professional earns on this job. */
+  proEarningPaise?: number;
   payMode: HomePayMode;
   paymentId: string | null;
   paid: boolean;
@@ -189,7 +192,7 @@ export interface HomeProBalance {
 }
 export interface HomeAdminCategory { id: string; slug: string; name: string; icon: string; commissionBps: number }
 
-/** Commission on the job price (before the convenience fee, which is ZARVA's). bps: 2000 = 20%. */
+/** Commission on the base price (before GST; the service and platform charges are all ZARVA's). bps: 2000 = 20%. */
 export function homeCommission(subtotalPaise: number, commissionBps: number): number {
   return Math.round((subtotalPaise * commissionBps) / 10_000);
 }
@@ -242,12 +245,6 @@ export const homeDocUploadSchema = z.object({
   /** File bytes, base64. The web app shrinks photos to about 1600 px first. */
   dataBase64: z.string().min(16).max(Math.ceil((HOME_DOC_RULES.maxBytes * 4) / 3) + 8),
 });
-
-export function homeTotals(lines: { unitPricePaise: number; qty: number }[]) {
-  const subtotalPaise = lines.reduce((s, l) => s + l.unitPricePaise * l.qty, 0);
-  const feePaise = subtotalPaise > 0 && subtotalPaise < HOME_RULES.freeFeeAbovePaise ? HOME_RULES.convenienceFeePaise : 0;
-  return { subtotalPaise, feePaise, totalPaise: subtotalPaise + feePaise };
-}
 
 /** 49900 -> "₹499", 49950 -> "₹499.50" */
 export function formatRupees(paise: number): string {

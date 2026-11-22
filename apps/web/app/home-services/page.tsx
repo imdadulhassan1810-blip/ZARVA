@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { gradient } from "@zarva/brand";
-import { formatRupees, homeTotals, HOME_RULES, type HomeCategory, type HomeCity, type HomeRatingSummary, type HomeService } from "@zarva/core";
+import { DEFAULT_HOME_POLICY, formatRupees, homeTotals, homeUnitPrice, HOME_RULES, type HomeCategory, type HomePolicy, type HomeCity, type HomeRatingSummary, type HomeService } from "@zarva/core";
 import { CategoryReviews, RatingBadge } from "../../components/Reviews";
 import { api } from "../../lib/api";
 import { loadCart, saveCart, type Cart } from "../../lib/cart";
@@ -13,6 +13,7 @@ export default function HomeServices() {
   const [cities, setCities] = useState<HomeCity[]>([]);
   const [categories, setCategories] = useState<HomeCategory[]>([]);
   const [services, setServices] = useState<HomeService[]>([]);
+  const [policy, setPolicy] = useState<HomePolicy>(DEFAULT_HOME_POLICY);
   const [active, setActive] = useState<string | null>(null);
   const [cart, setCart] = useState<Cart>({ cityId: "durgapur", categoryId: null, items: {} });
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +30,7 @@ export default function HomeServices() {
       .then((r) => {
         setCategories(r.categories);
         setServices(r.services);
+        setPolicy(r.policy ?? DEFAULT_HOME_POLICY);
         // Links from the landing page open a category directly: /home-services?cat=electrician
         const slug = new URLSearchParams(window.location.search).get("cat");
         const fromLink = slug ? r.categories.find((x) => x.slug === slug) : undefined;
@@ -42,7 +44,7 @@ export default function HomeServices() {
     const s = byId.get(id);
     return s ? [{ unitPricePaise: s.pricePaise, qty }] : [];
   });
-  const totals = homeTotals(lines);
+  const totals = homeTotals(lines, policy);
   const count = lines.reduce((n, l) => n + l.qty, 0);
 
   function setQty(s: HomeService, qty: number) {
@@ -109,7 +111,8 @@ export default function HomeServices() {
                     <strong>{s.name}</strong>
                     <div className="muted" style={{ fontSize: 14 }}>{s.description}</div>
                     <div className="svc-meta">
-                      <span className="price">{formatRupees(s.pricePaise)}</span>
+                      <span className="price">{formatRupees(homeUnitPrice(s.pricePaise, policy))}</span>
+                      <span className="muted" style={{ fontSize: 13 }}>+ fee &amp; GST</span>
                       <span className="muted">· {s.durationMin < 60 ? `${s.durationMin} min` : `${Math.round(s.durationMin / 6) / 10} hr`}</span>
                     </div>
                     {s.inclusions.length > 0 && (
@@ -142,7 +145,7 @@ export default function HomeServices() {
           <div>
             <strong>{count} item{count > 1 ? "s" : ""} · {formatRupees(totals.totalPaise)}</strong>
             <div className="muted" style={{ fontSize: 13 }}>
-              {totals.feePaise > 0 ? `Incl. ${formatRupees(totals.feePaise)} fee. Add ${formatRupees(HOME_RULES.freeFeeAbovePaise - totals.subtotalPaise)} more to skip it.` : "No convenience fee"}
+              Incl. platform &amp; convenience fee and GST
             </div>
           </div>
           <button className="btn" onClick={() => router.push("/home-services/checkout")}>Continue</button>

@@ -219,7 +219,10 @@ function JobsScreen() {
                       <Text style={{ color: t.text, fontWeight: "800", fontSize: 16 }}>{when(b)}</Text>
                       <Text style={{ color: t.text }}>{items(b)}</Text>
                     </View>
-                    <Text style={{ color: t.text, fontWeight: "800", fontSize: 20 }}>{formatRupees(b.totalPaise)}</Text>
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={{ color: t.muted, fontSize: 12 }}>You earn</Text>
+                      <Text style={{ color: t.text, fontWeight: "800", fontSize: 20 }}>{formatRupees(b.proEarningPaise ?? b.totalPaise)}</Text>
+                    </View>
                   </View>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <Ionicons name="location-outline" size={15} color={t.muted} />

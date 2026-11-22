@@ -26,7 +26,7 @@ export function HomeScreen() {
   const { t, user } = useSession();
   const nav = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
-  const { categories, services, catalogError, reloadCatalog, setQty } = useStore();
+  const { categories, services, catalogError, reloadCatalog, setQty, priceOf } = useStore();
   const [refreshing, setRefreshing] = useState(false);
   const [q, setQ] = useState("");
   const [cityOpen, setCityOpen] = useState(false);
@@ -34,7 +34,7 @@ export function HomeScreen() {
 
   const fromPrice = useMemo(() => {
     const m = new Map<string, number>();
-    for (const s of services) m.set(s.categoryId, Math.min(m.get(s.categoryId) ?? Infinity, s.pricePaise));
+    for (const s of services) m.set(s.categoryId, Math.min(m.get(s.categoryId) ?? Infinity, priceOf(s)));
     return m;
   }, [services]);
   const popular = useMemo(() => (categories ?? []).flatMap((c) => services.find((s) => s.categoryId === c.id) ?? []).slice(0, 8), [categories, services]);
@@ -172,7 +172,7 @@ export function HomeScreen() {
                           <View style={{ padding: 12, gap: 4 }}>
                             <Text style={{ color: t.text, fontWeight: "700" }} numberOfLines={1}>{s.name}</Text>
                             <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={1}>{s.durationMin} min · {categories?.[i]?.name}</Text>
-                            <Text style={{ color: t.text, fontWeight: "800", marginTop: 2 }}>{formatRupees(s.pricePaise)}</Text>
+                            <Text style={{ color: t.text, fontWeight: "800", marginTop: 2 }}>{formatRupees(priceOf(s))}</Text>
                           </View>
                         </Pressable>
                       );

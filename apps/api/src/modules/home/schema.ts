@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { HomePriceBreakdown } from "@zarva/core";
 import {
   bigserial, boolean, check, customType, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid,
 } from "drizzle-orm/pg-core";
@@ -55,7 +56,7 @@ export const homeServices = pgTable(
     slug: text("slug").notNull().unique(),
     name: text("name").notNull(),
     description: text("description").notNull(),
-    /** Price incl. GST, integer paise. */
+    /** Base price before GST, integer paise. GST and charges are added at checkout (see homeTotals). */
     pricePaise: integer("price_paise").notNull(),
     durationMin: integer("duration_min").notNull(),
     inclusions: text("inclusions").array().notNull().default(sql`'{}'::text[]`),
@@ -128,6 +129,8 @@ export const homeBookings = pgTable(
     subtotalPaise: integer("subtotal_paise").notNull(),
     feePaise: integer("fee_paise").notNull(),
     totalPaise: integer("total_paise").notNull(),
+    /** HomePriceBreakdown frozen at booking. Null on bookings made when prices included GST. */
+    pricing: jsonb("pricing").$type<HomePriceBreakdown>(),
     payMode: homePayModeEnum("pay_mode").notNull(),
     paymentId: uuid("payment_id").references(() => payments.id),
     paid: boolean("paid").notNull().default(false),

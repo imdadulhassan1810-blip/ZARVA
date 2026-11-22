@@ -217,9 +217,12 @@ describe("invoices", () => {
     const data = row!.data as InvoiceData;
     expect(data.kind).toBe("tax_invoice");
     expect(data.seller).toMatchObject({ gstin: "19ABCDE1234F1Z5", name: "ZARVA Technologies Pvt Ltd" });
-    // Fan repair Rs 199 + Rs 29 fee = Rs 228 incl. 18% GST.
-    expect(data.totalPaise).toBe(22800);
-    expect(data.tax).toEqual({ rateBps: 1800, taxablePaise: 19322, cgstPaise: 1739, sgstPaise: 1739, igstPaise: 0 });
+    // Fan repair quoted Rs 199: base 208.95 + fee 18.81 (12.54 + 6.27) = 227.76 taxable, GST 41.00, total 268.76.
+    expect(data.totalPaise).toBe(26876);
+    expect(data.lines).toEqual([{ name: "Fan repair", qty: 1, unitPaise: 20895, amountPaise: 20895 }]);
+    expect(data.charges).toEqual([{ label: "Platform & convenience fee", amountPaise: 1254 + 627 }]);
+    expect(data.tax).toEqual({ rateBps: 1800, taxablePaise: 22776, cgstPaise: 2050, sgstPaise: 2050, igstPaise: 0 });
+    expect(data.tax!.taxablePaise + data.tax!.cgstPaise + data.tax!.sgstPaise).toBe(data.totalPaise);
     expect(data.sac).toMatchObject({ code: "9987" });
     const doc = await PDFDocument.load(await renderInvoice(data));
     expect(doc.getTitle()).toBe("ZARVA tax invoice ZH/26-27/000001");

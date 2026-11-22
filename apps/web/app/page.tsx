@@ -223,7 +223,7 @@ export default function Home() {
           <li><span className="lp-step-n">1</span><strong>Pick a service</strong><span>Choose what you need and see the full price upfront.</span></li>
           <li><span className="lp-step-n">2</span><strong>Choose a time</strong><span>Pick a 1-hour arrival slot that suits you, from 2 hours ahead.</span></li>
           <li><span className="lp-step-n">3</span><strong>A verified pro arrives</strong><span>Share your start code when they reach, so only your pro can begin.</span></li>
-          <li><span className="lp-step-n">4</span><strong>Pay after the job</strong><span>Cash or UPI to your pro when the work is done. Orders above {formatRupees(HOME_RULES.freeFeeAbovePaise)} have no convenience fee.</span></li>
+          <li><span className="lp-step-n">4</span><strong>Pay online when you book</strong><span>UPI, card or net banking. Checkout shows the service price, charges and GST line by line before you pay.</span></li>
         </ol>
       </section>
 

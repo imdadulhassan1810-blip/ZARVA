@@ -71,6 +71,13 @@
       "when": 1795330839473,
       "tag": "0009_cancellation_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795333730942,
+      "tag": "0010_pre_gst_pricing",
+      "breakpoints": true
     }
   ]
 }

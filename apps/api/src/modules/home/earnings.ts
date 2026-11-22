@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import {
-  bookingCode, formatRupees, homeCommission,
+  bookingCode, formatRupees, homeProEarning,
   type HomeEarnings, type HomeLedgerEntry, type HomePayout, type HomeProBalance,
 } from "@zarva/core";
 import { PayoutRejectedError, type PayoutDestination, type PayoutProvider } from "@zarva/payments";
@@ -32,11 +32,12 @@ export class EarningsService {
   /** Inside the transaction that marks the job completed. Idempotent per booking. */
   async recordJob(tx: Tx, b: BookingRow, pro: ProRow): Promise<void> {
     const cat = await tx.query.homeCategories.findFirst({ where: eq(homeCategories.id, b.categoryId), columns: { commissionBps: true } });
-    const commission = homeCommission(b.subtotalPaise, cat?.commissionBps ?? 2000);
+    // New bookings: the pro earns their whole quote (ZARVA keeps the markup and charges). Legacy: category commission.
+    const e = homeProEarning(b, cat?.commissionBps ?? 2000);
     const at = this.now();
     await tx.insert(homeProLedger).values({
-      proId: pro.id, kind: "job_earning", amountPaise: b.subtotalPaise - commission, bookingId: b.id,
-      grossPaise: b.subtotalPaise, commissionPaise: commission, createdAt: at,
+      proId: pro.id, kind: "job_earning", amountPaise: e.earningPaise, bookingId: b.id,
+      grossPaise: e.grossPaise, commissionPaise: e.commissionPaise, createdAt: at,
     }).onConflictDoNothing();
     if (b.payMode === "after_service") {
       // The pro kept the customer's cash (job price + fee); that is money they hold for ZARVA.

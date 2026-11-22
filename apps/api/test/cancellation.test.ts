@@ -42,7 +42,7 @@ async function makePro(phone = "9000000001") {
   await req("PATCH", `${P}/admin/pros/${a.body.pro.id}`, await login("admin"), { status: "active" });
   return s;
 }
-/** Books fan repair (₹199 + ₹29 fee = ₹228), pays with the mock checkout and settles the payment. */
+/** Books fan repair (quote ₹199; customer pays ₹268.76), pays with the mock checkout and settles the payment. */
 async function bookPaid(s: Session, hour: number, date = "2026-11-23"): Promise<HomeBooking> {
   const c = await catalog();
   const addr = await req("POST", "/v1/me/addresses", s, {
@@ -63,7 +63,7 @@ async function bookPaid(s: Session, hour: number, date = "2026-11-23"): Promise<
 }
 
 describe("refund maths", () => {
-  it("splits GST out of the inclusive price and refunds base and GST in the same share; fee never", () => {
+  it("legacy bookings: splits GST out of the inclusive price and refunds base and GST in the same share; fee never", () => {
     expect(splitGst(19900)).toEqual({ basePaise: 16864, gstPaise: 3036 });
     const q = homeRefundQuote({ subtotalPaise: 19900, feePaise: 2900, totalPaise: 22800 }, 6 * 60, DEFAULT_HOME_POLICY);
     expect(q).toMatchObject({ refundBps: 7500, baseRefundPaise: 12648, gstRefundPaise: 2277, refundPaise: 14925, feeKeptPaise: 2900, chargePaise: 7875 });
@@ -100,21 +100,22 @@ describe("customer cancellation", () => {
     const s = await login();
     const b = await bookPaid(s, 15); // 6 hours ahead: 75% slab
     expect(b.cancelInfo).toMatchObject({ canCancel: true, canReschedule: true, cancelBlock: null, reschedulesLeft: 2 });
-    expect(b.cancelInfo!.quote).toMatchObject({ refundBps: 7500, refundPaise: 14925, feeKeptPaise: 2900, chargePaise: 7875 });
+    // 75% of base ₹208.95 and of its GST ₹37.61, each rounded down; charges ₹22.20 (₹12.54 + ₹6.27 + their GST ₹3.39) kept.
+    expect(b.cancelInfo!.quote).toMatchObject({ refundBps: 7500, baseRefundPaise: 15671, gstRefundPaise: 2820, refundPaise: 18491, feeKeptPaise: 2220, chargePaise: 8385 });
 
     advance(1); // now 5 h 59 min ahead: the 50% slab
     const q = (await req("GET", `${P}/bookings/${b.id}/cancel-quote`, s)).body.cancelInfo;
     expect(q.quote.refundBps).toBe(5000);
-    const stale = await req("POST", `${P}/bookings/${b.id}/cancel`, s, { reason: "Plans changed", expectedRefundPaise: 14925 });
+    const stale = await req("POST", `${P}/bookings/${b.id}/cancel`, s, { reason: "Plans changed", expectedRefundPaise: 18491 });
     expect(stale.status).toBe(409);
     expect(stale.body.error.code).toBe("quote_changed");
 
     const c = await req("POST", `${P}/bookings/${b.id}/cancel`, s, { reason: "Plans changed", expectedRefundPaise: q.quote.refundPaise });
-    expect(c.body.booking).toMatchObject({ status: "cancelled", refundedPaise: 9950, canCancel: false });
-    expect(c.body.booking.cancellation).toMatchObject({ by: "customer", minutesBefore: 359, quote: { baseRefundPaise: 8432, gstRefundPaise: 1518 } });
+    expect(c.body.booking).toMatchObject({ status: "cancelled", refundedPaise: 12327, canCancel: false });
+    expect(c.body.booking.cancellation).toMatchObject({ by: "customer", minutesBefore: 359, quote: { baseRefundPaise: 10447, gstRefundPaise: 1880 } });
     const pay = await req("GET", `/v1/payments/${b.paymentId}`, s);
-    expect(pay.body.payment).toMatchObject({ status: "partially_refunded", refundedPaise: 9950 });
-    expect((await t.messages()).find((m) => m.event === "refund_started")!.text).toContain("₹99.50");
+    expect(pay.body.payment).toMatchObject({ status: "partially_refunded", refundedPaise: 12327 });
+    expect((await t.messages()).find((m) => m.event === "refund_started")!.text).toContain("₹123.27");
   });
 
   it("24 hours or more ahead: the whole service price back, fee kept", async () => {
@@ -122,7 +123,7 @@ describe("customer cancellation", () => {
     const s = await login();
     const b = await bookPaid(s, 11, "2026-11-24");
     const c = await req("POST", `${P}/bookings/${b.id}/cancel`, s, {});
-    expect(c.body.booking.refundedPaise).toBe(19900);
+    expect(c.body.booking.refundedPaise).toBe(20895 + 3761);
   });
 
   it("no cancel or reschedule less than 90 minutes before the slot", async () => {
@@ -147,7 +148,7 @@ describe("customer cancellation", () => {
     const s = await login();
     const b = await bookPaid(s, 12);
     const c = await req("POST", `${P}/admin/bookings/${b.id}/cancel`, await login("admin"), { reason: "No professional available" });
-    expect(c.body.booking).toMatchObject({ status: "cancelled", refundedPaise: 22800, cancellation: { by: "admin" } });
+    expect(c.body.booking).toMatchObject({ status: "cancelled", refundedPaise: 26876, cancellation: { by: "admin" } });
   });
 });
 
@@ -160,7 +161,7 @@ describe("customer reschedule", () => {
     await t.messages();
 
     const r1 = await req("POST", `${P}/bookings/${b.id}/reschedule`, s, { slotStart: istInstant("2026-11-24", 10).toISOString() });
-    expect(r1.body.booking).toMatchObject({ status: "confirmed", pro: null, rescheduleCount: 1, totalPaise: 22800, refundedPaise: 0, slotStart: istInstant("2026-11-24", 10).toISOString() });
+    expect(r1.body.booking).toMatchObject({ status: "confirmed", pro: null, rescheduleCount: 1, totalPaise: 26876, refundedPaise: 0, slotStart: istInstant("2026-11-24", 10).toISOString() });
     const msgs = await t.messages();
     expect(msgs.find((m) => m.event === "booking_rescheduled")!.text).toContain("moved to 24 Nov, 10 AM");
     expect(msgs.find((m) => m.event === "pro_job_cancelled")).toMatchObject({ to: "+919000000001" });
@@ -243,7 +244,7 @@ describe("partner cancellation", () => {
     for (const j of [done, ...jobs]) expect((await req("POST", `${P}/pro/jobs/${j.id}/accept`, pro)).status).toBe(200);
     await req("POST", `${P}/pro/jobs/${done.id}/status`, pro, { status: "on_the_way" });
     await req("POST", `${P}/pro/jobs/${done.id}/status`, pro, { status: "in_progress", startCode: done.startCode });
-    await req("POST", `${P}/pro/jobs/${done.id}/status`, pro, { status: "completed" }); // earns ₹199 - 20% = ₹159.20
+    await req("POST", `${P}/pro/jobs/${done.id}/status`, pro, { status: "completed" }); // earns ₹199 - 10% = ₹179.10
 
     let stats = (await req("POST", `${P}/pro/jobs/${jobs[0]!.id}/cancel`, pro, { reason: "Family emergency" })).body.cancelStats;
     stats = (await req("POST", `${P}/pro/jobs/${jobs[1]!.id}/cancel`, pro, { reason: "Family emergency" })).body.cancelStats;
@@ -253,22 +254,22 @@ describe("partner cancellation", () => {
 
     // Same day: the penalty isn't written yet (the day's earnings aren't final).
     let e = (await req("GET", `${P}/pro/earnings`, pro)).body;
-    expect(e.balancePaise).toBe(15920);
+    expect(e.balancePaise).toBe(17910);
     expect(e.cancelStats.today).toBe(3);
 
     advance(15 * 60 + 1); // 00:01 IST Tuesday
     e = (await req("GET", `${P}/pro/earnings`, pro)).body;
-    expect(e.entries[0]).toMatchObject({ kind: "cancellation_penalty", amountPaise: -1592 });
+    expect(e.entries[0]).toMatchObject({ kind: "cancellation_penalty", amountPaise: -1791 });
     expect(e.entries[0].note).toContain("3 jobs cancelled on 2026-11-23: 10%");
-    expect(e.balancePaise).toBe(15920 - 1592);
-    expect(e.penaltiesWeekPaise).toBe(1592);
+    expect(e.balancePaise).toBe(17910 - 1791);
+    expect(e.penaltiesWeekPaise).toBe(1791);
     expect(e.cancelStats).toMatchObject({ today: 0, week: 3 });
 
     // Settling again changes nothing; the admin payout list shows the same balance.
     const payouts = (await req("GET", `${P}/admin/payouts`, (await t.loginAdmin()) as unknown as Session)).body;
     expect(payouts.pros, JSON.stringify(payouts)).toBeDefined();
     const bal = payouts.pros[0];
-    expect(bal.balancePaise).toBe(15920 - 1592);
+    expect(bal.balancePaise).toBe(17910 - 1791);
   });
 
   it("blocks cancelling once the weekly limit is reached", async () => {

@@ -43,7 +43,7 @@ It prints the username, a start password and an authenticator key. Type or scan 
 
 ## How it works
 
-- **Catalogue**: 8 categories, 41 services, prices in `apps/api/src/modules/home/seed-data.ts`. Prices include GST. Orders under ₹299 pay a ₹29 convenience fee; minimum order ₹99.
+- **Catalogue**: 8 categories, 41 services, prices in `apps/api/src/modules/home/seed-data.ts`. Catalogue prices are the professional's quote (minimum order ₹99). See **Pricing** below.
 - **Serviceability**: decided by the address PIN code (`home_cities.pincodes`).
 - **Slots**: 1-hour arrival windows, 8 AM to 8 PM IST, 7 days ahead, at least 2 hours from now. A slot is free while *bookings in that slot < active pros in that category*. A row lock per slot stops two customers taking the last pro.
 - **Payment**: "Pay now" (Razorpay, UPI first) or "Pay after service" (pro collects cash/UPI and marks it). An unpaid online booking holds its slot for 15 minutes. The booking is confirmed by the client callback *or* the webhook, whichever comes first, inside the same database transaction as the payment change.
@@ -106,3 +106,23 @@ Partners see their balance, last 7 days, every ledger row with the commission sp
 | Partner page | Sign-up: documents | Partner earnings | Admin: KYC review | Admin: payouts |
 |---|---|---|---|---|
 | ![](screenshots/partners/01-partner-landing.png) | ![](screenshots/partners/03-signup-documents.png) | ![](screenshots/partners/08-pro-earnings.png) | ![](screenshots/partners/07-admin-kyc-review.png) | ![](screenshots/partners/09-admin-payout-to-pay.png) |
+
+## Pricing (from 22 Nov 2026)
+
+One function, `homeTotals` in `packages/core/src/home-policy.ts`, works out every price. The API stores its result on the booking (`home_bookings.pricing`), and checkout, the booking page, the invoice, refunds and partner earnings all read from it.
+
+| Line | Rule (default, admin-editable) | Quote ₹100 | Quote ₹199 |
+|---|---|---|---|
+| 1. Service price (base) | professional's quote + 5% | ₹105.00 | ₹208.95 |
+| 2. Platform & convenience fee | 6% (Operations) + 3% (Tech) of base, at least ₹15 | ₹15.00 | ₹18.81 |
+| 3. GST | 18% of (1 + 2) | ₹21.60 | ₹41.00 |
+| Customer pays | 1 + 2 + 3 | ₹141.60 | ₹268.76 |
+| Professional earns | quote − 10% commission | ₹90.00 | ₹179.10 |
+
+Customers see one fee line. Admin and the stored breakdown keep it split: service charge 6% is the Operations bucket and platform charge 3% is the Tech bucket. When the ₹15 minimum applies, it is split between them in the same 6:3 ratio.
+
+Rounding: the markup is applied per item; charges and GST are worked out on the whole order. Each amount is rounded to the nearest paisa (half a paisa up), and the total is the sum of the rounded lines, so the bill always adds up.
+
+Refunds: the base price and its share of the GST (18% of the base) come back by the cancellation slab, each rounded down to the paisa. The platform & convenience fee and its share of the GST are never refunded. If ZARVA cancels, everything is refunded.
+
+Rates are set in admin → Pricing & cancellation. A booking keeps the rates it was made with. Bookings made before this change have no `pricing`: their price included GST, a flat ₹29 fee applied, and the category commission is used for the partner's earning.

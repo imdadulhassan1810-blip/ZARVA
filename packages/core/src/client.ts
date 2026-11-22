@@ -3,8 +3,10 @@ import type { ModuleStatus } from "./modules";
 import type { AddressInput, ProfileUpdate } from "./schemas";
 import type {
   HomeAdminCategory, HomeBooking, HomeBookingStatus, HomeCategory, HomeCity, HomeCreateBooking, HomeEarnings, HomePayout, HomePro,
-  HomeProApply, HomeProBalance, HomeProDocKind, HomeProPayoutInput, HomeProUpdate, HomeService, HomeSlotDay,
+  HomeBookingReviewState, HomeProApply, HomeProBalance, HomeProDocKind, HomeProPayoutInput, HomeProUpdate, HomeRatingSummary, HomeReview,
+  HomeReviewInput, HomeService, HomeSlotDay,
 } from "./home";
+import type { Feedback, FeedbackInput, SupportCreate, SupportStatus, SupportTicket } from "./support";
 
 export interface HomePaymentStart { id: string; status: string; clientPayload: Record<string, unknown> }
 export interface PaymentConfirmation { providerOrderId: string; providerPaymentId: string; signature: string }
@@ -144,7 +146,46 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
     adminCreate: (username: string, name: string) => call<AdminCreated>("POST", "/v1/admin/team", { username, name }),
     adminSetStatus: (id: string, status: "active" | "disabled") => call<{ admin: AdminAccount }>("PATCH", `/v1/admin/team/${id}`, { status }),
 
+    /** Help & support (customer app) and the team's queue (admin app). */
+    support: {
+      create: (t: SupportCreate) => call<{ ticket: SupportTicket }>("POST", "/v1/support/tickets", t),
+      tickets: (ref?: { module: "home"; referenceId: string }) =>
+        call<{ tickets: SupportTicket[] }>("GET", `/v1/support/tickets${ref ? `?module=${ref.module}&referenceId=${ref.referenceId}` : ""}`),
+      ticket: (id: string) => call<{ ticket: SupportTicket }>("GET", `/v1/support/tickets/${id}`),
+      reply: (id: string, message: string) => call<{ ticket: SupportTicket }>("POST", `/v1/support/tickets/${id}/messages`, { message }),
+      resolve: (id: string) => call<{ ticket: SupportTicket }>("POST", `/v1/support/tickets/${id}/resolve`, {}),
+      feedback: (f: FeedbackInput) => call<{ id: string }>("POST", "/v1/support/feedback", f),
+      admin: {
+        tickets: (status?: SupportStatus) =>
+          call<{ tickets: SupportTicket[]; counts: Record<SupportStatus, number> }>("GET", `/v1/admin/support/tickets${status ? `?status=${status}` : ""}`),
+        ticket: (id: string) => call<{ ticket: SupportTicket }>("GET", `/v1/admin/support/tickets/${id}`),
+        reply: (id: string, message: string, resolve = false) => call<{ ticket: SupportTicket }>("POST", `/v1/admin/support/tickets/${id}/messages`, { message, resolve }),
+        setStatus: (id: string, status: SupportStatus) => call<{ ticket: SupportTicket }>("PATCH", `/v1/admin/support/tickets/${id}`, { status }),
+        feedback: () => call<{ feedback: Feedback[] }>("GET", "/v1/admin/feedback"),
+      },
+    },
+
     home: {
+      reviews: (q: { category?: string; limit?: number; minRating?: number; withComment?: boolean } = {}) => {
+        const p = new URLSearchParams();
+        if (q.category) p.set("category", q.category);
+        if (q.limit) p.set("limit", String(q.limit));
+        if (q.minRating) p.set("minRating", String(q.minRating));
+        if (q.withComment) p.set("withComment", "true");
+        const qs = p.toString();
+        return raw<{ reviews: HomeReview[] }>("GET", `${H}/reviews${qs ? `?${qs}` : ""}`, undefined, false);
+      },
+      ratingSummary: () => raw<{ overall: HomeRatingSummary; categories: Record<string, HomeRatingSummary> }>("GET", `${H}/reviews/summary`, undefined, false),
+      bookingReview: (id: string) => call<HomeBookingReviewState>("GET", `${H}/bookings/${id}/review`),
+      submitReview: (id: string, r: HomeReviewInput) => call<HomeBookingReviewState>("PUT", `${H}/bookings/${id}/review`, r),
+      /** The invoice PDF itself (website: save it as a file). */
+      invoicePdf: (id: string) => call<Blob>("GET", `${H}/bookings/${id}/invoice.pdf`),
+      /** A 15-minute link to the PDF that needs no sign-in (phone app: open it in the browser). Full URL. */
+      invoiceLink: async (id: string) => {
+        const r = await call<{ path: string; expiresInSeconds: number }>("POST", `${H}/bookings/${id}/invoice-link`, {});
+        return { url: `${baseUrl}${r.path}`, expiresInSeconds: r.expiresInSeconds };
+      },
+      proReviews: () => call<{ summary: HomeRatingSummary; reviews: HomeReview[] }>("GET", `${H}/pro/reviews`),
       cities: () => raw<{ cities: HomeCity[] }>("GET", `${H}/cities`, undefined, false),
       catalog: (city: string) =>
         raw<{ city: HomeCity; categories: HomeCategory[]; services: HomeService[]; onlinePayment?: boolean }>("GET", `${H}/catalog?city=${encodeURIComponent(city)}`, undefined, false),
@@ -191,6 +232,11 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
         adjust: (proId: string, amountPaise: number, note: string) =>
           call<{ balancePaise: number }>("POST", `${H}/admin/pros/${proId}/adjustments`, { amountPaise, note }),
         services: () => call<{ services: HomeService[] }>("GET", `${H}/admin/services`),
+        reviews: (q: { hidden?: boolean; maxRating?: number } = {}) =>
+          call<{ reviews: HomeReview[] }>("GET", `${H}/admin/reviews?${q.hidden === undefined ? "" : `hidden=${q.hidden}&`}${q.maxRating ? `maxRating=${q.maxRating}` : ""}`),
+        hideReview: (id: string, reason: string) => call<{ review: HomeReview }>("POST", `${H}/admin/reviews/${id}/hide`, { reason }),
+        unhideReview: (id: string) => call<{ review: HomeReview }>("POST", `${H}/admin/reviews/${id}/unhide`, {}),
+        invoicePdf: (bookingId: string) => call<Blob>("GET", `${H}/admin/bookings/${bookingId}/invoice.pdf`),
         updateService: (id: string, patch: { pricePaise?: number; active?: boolean }) =>
           call<{ service: HomeService }>("PATCH", `${H}/admin/services/${id}`, patch),
       },

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Linking, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
-import { formatPhone, formatRupees, type HomeBooking, type HomeBookingStatus } from "@zarva/core";
+import { formatPhone, formatRupees, homeReviewTagLabel, type HomeBooking, type HomeBookingStatus } from "@zarva/core";
 import { api } from "../api";
 import type { Theme } from "../theme";
 import { Button, Card, ConfirmSheet, EmptyState, ErrorBanner, haptic, IconButton, Ionicons, Pill, SkeletonCard, type IconName } from "../ui";
 import { useSession, type CustomerStackParams } from "./CustomerApp";
+import { RateForm, RatingBadge, Stars } from "../care";
 import type { Nav } from "./HomeScreen";
 
 const when = (iso: string) =>
@@ -87,6 +88,10 @@ const STEPS: { s: HomeBookingStatus; label: string }[] = [
 
 export function BookingScreen() {
   const { t } = useSession();
+  const nav = useNavigation<Nav>();
+  const [editingReview, setEditingReview] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [opening, setOpening] = useState(false);
   const { params } = useRoute<RouteProp<CustomerStackParams, "Booking">>();
   const [b, setB] = useState<HomeBooking | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -159,6 +164,35 @@ export function BookingScreen() {
         </Card>
       )}
 
+      {b.status === "completed" && b.review && (b.review.review && !editingReview ? (
+        <Card t={t} style={{ gap: 8 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ color: t.text, fontWeight: "800" }}>Your rating</Text>
+            {b.review.canEdit && <Button t={t} size="sm" variant="plain" title="Edit" onPress={() => setEditingReview(true)} />}
+          </View>
+          <Stars t={t} value={b.review.review.rating} size={22} />
+          {b.review.review.comment ? <Text style={{ color: t.text }}>“{b.review.review.comment}”</Text> : null}
+          {b.review.review.tags.length > 0 && <Text style={{ color: t.muted, fontSize: 13 }}>{b.review.review.tags.map((x) => homeReviewTagLabel[x]).join(" · ")}</Text>}
+          {b.review.review.hidden && <Text style={{ color: t.muted, fontSize: 12 }}>Hidden by ZARVA: {b.review.review.hiddenReason}</Text>}
+          {b.review.review.rating <= 2 && (
+            <Button t={t} size="sm" variant="outline" icon="chatbubbles-outline" title="Tell our team what happened"
+              onPress={() => nav.navigate("NewTicket", { bookingId: b.id, label: `Booking ${b.code} · ${b.categoryName}` })} />
+          )}
+        </Card>
+      ) : (b.review.canReview || editingReview) ? (
+        <RateForm t={t} proName={b.pro?.name.split(" ")[0] ?? "the professional"} initial={b.review.review} saving={saving}
+          onCancel={editingReview ? () => setEditingReview(false) : undefined}
+          onSubmit={async (r) => {
+            setSaving(true);
+            try {
+              const review = await api.home.submitReview(b.id, r);
+              haptic.success();
+              setB({ ...b, review });
+              setEditingReview(false);
+            } catch (e) { haptic.error(); setError((e as Error).message); } finally { setSaving(false); }
+          }} />
+      ) : null)}
+
       {b.pro && (
         <Card t={t} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: t.home, alignItems: "center", justifyContent: "center" }}>
@@ -167,6 +201,7 @@ export function BookingScreen() {
           <View style={{ flex: 1 }}>
             <Text style={{ color: t.text, fontWeight: "800" }}>{b.pro.name}</Text>
             <Text style={{ color: t.muted, fontSize: 13 }}>Your ZARVA professional{b.pro.phone ? ` · ${formatPhone(b.pro.phone)}` : ""}</Text>
+            <RatingBadge t={t} summary={b.pro.rating} />
           </View>
           {b.pro.phone && <IconButton t={t} icon="call" label={`Call ${b.pro.name}`} color="#fff" bg={t.success} onPress={() => void Linking.openURL(`tel:${b.pro!.phone}`)} />}
         </Card>
@@ -191,9 +226,22 @@ export function BookingScreen() {
           <Text style={{ color: t.text, fontWeight: "800" }}>{formatRupees(b.totalPaise)}</Text>
         </View>
         <Text style={{ color: b.paid ? t.success : t.muted, fontWeight: "600", fontSize: 13 }}>
-          {b.paid ? "Paid online" : b.payMode === "after_service" ? "Pay the professional after the service" : "Not paid"}
+          {b.paid ? (b.payMode === "online" ? "Paid online" : "Paid to the professional") : b.payMode === "after_service" ? "Pay the professional after the service" : "Not paid"}
           {b.refundedPaise > 0 ? ` · ${formatRupees(b.refundedPaise)} refunded` : ""}
         </Text>
+        {b.hasInvoice && (
+          <Button t={t} size="md" variant="outline" icon="document-text-outline" loading={opening} style={{ marginTop: 6 }}
+            title={b.invoiceNumber ? `Download invoice ${b.invoiceNumber}` : "Download invoice"}
+            onPress={async () => {
+              setOpening(true);
+              try {
+                // Opens the PDF in the phone's browser, from where it can be saved or shared. The link works for 15 minutes.
+                const { url } = await api.home.invoiceLink(b.id);
+                await Linking.openURL(url);
+                if (!b.invoiceNumber) void load();
+              } catch (e) { setError((e as Error).message); } finally { setOpening(false); }
+            }} />
+        )}
       </Card>
 
       <Card t={t} style={{ flexDirection: "row", gap: 12 }}>
@@ -202,6 +250,15 @@ export function BookingScreen() {
           <Text style={{ color: t.text, fontWeight: "700" }}>{b.address.name}</Text>
           <Text style={{ color: t.muted, fontSize: 13 }}>{[b.address.line1, b.address.line2, b.address.landmark, `${b.address.city} ${b.address.pincode}`].filter(Boolean).join(", ")}</Text>
         </View>
+      </Card>
+
+      <Card t={t} onPress={() => nav.navigate("NewTicket", { bookingId: b.id, label: `Booking ${b.code} · ${b.categoryName}` })} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <Ionicons name="help-buoy-outline" size={22} color={t.primary} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: t.text, fontWeight: "700" }}>Need help with this booking?</Text>
+          <Text style={{ color: t.muted, fontSize: 13 }}>Raise a ticket. Our team replies in the app.</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={t.muted} />
       </Card>
 
       {error && <ErrorBanner t={t} message={error} />}

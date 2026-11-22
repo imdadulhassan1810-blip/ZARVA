@@ -31,7 +31,8 @@ describe("'Pay online' is off on a live server with Razorpay test keys", () => {
     const addr = await t.app.inject({ method: "POST", url: "/v1/me/addresses", headers: s.headers, payload: {
       name: "Riya Sen", phone: "9876543210", line1: "12 Nehru Avenue", line2: "Benachity", city: "Durgapur", state: "West Bengal", pincode: "713216",
     } });
-    const service = cat.services[0];
+    // Any service above the minimum order (services with equal sort come back in no fixed order).
+    const service = cat.services.find((x: { pricePaise: number }) => x.pricePaise >= 9900);
     const days = (await t.app.inject({ method: "GET", url: `/v1/m/home/slots?city=durgapur&categoryId=${service.categoryId}` })).json().days;
     const r = await t.app.inject({ method: "POST", url: "/v1/m/home/bookings", headers: s.headers, payload: {
       cityId: "durgapur", addressId: addr.json().address.id, slotStart: days[1].slots[0].start,

@@ -7,10 +7,12 @@ import { setStatusBarStyle } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import {
   formatPhone, formatRupees, HOME_DOC_RULES, homeLedgerLabel, homeProDocLabel, homeProIdTypeLabel, homeProIdTypes, homeProRequiredDocs,
-  type HomeBooking, type HomeCategory, type HomeEarnings, type HomePro, type HomeProDocKind, type HomeProIdType,
+  type HomeBooking, type HomeCategory, type HomeEarnings, type HomePro, type HomeProDocKind, type HomeProIdType, type HomeRatingSummary,
+  type HomeReview,
 } from "@zarva/core";
 import { Glow } from "../Glow";
 import { LaunchScreen, type LaunchView } from "../LaunchScreen";
+import { RatingOverview, ReviewItem } from "../care";
 import { partnerApi as api, loadTokens } from "../api";
 import { navTheme, tabListeners, tabOptions } from "../nav";
 import type { Theme } from "../theme";
@@ -324,6 +326,9 @@ function EarningsScreen() {
 function ProfileScreen() {
   const { t, pro, setPro, cats, signOut } = useP();
   const [edit, setEdit] = useState(false);
+  const [ratingsOpen, setRatingsOpen] = useState(false);
+  const [ratings, setRatings] = useState<{ summary: HomeRatingSummary; reviews: HomeReview[] } | null>(null);
+  useFocusEffect(useCallback(() => { api.home.proReviews().then(setRatings).catch(() => {}); }, []));
   return (
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}>
       <Card t={t} style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
@@ -342,12 +347,24 @@ function ProfileScreen() {
         <ListRow t={t} icon="trophy-outline" title="Jobs done" value={String(pro.jobsDone)} last />
       </Group>
       <Group t={t}>
+        <ListRow t={t} icon="star-outline" title="Your ratings"
+          subtitle={ratings?.summary.count ? `${ratings.summary.average?.toFixed(1)} from ${ratings.summary.count} customer${ratings.summary.count === 1 ? "" : "s"}` : "No ratings yet. Customers rate you after each job."}
+          onPress={() => setRatingsOpen(true)} last />
+      </Group>
+      <Group t={t}>
         <ListRow t={t} icon="wallet-outline" title="Payout account" subtitle={pro.payout.upi ?? pro.payout.bankAccountMasked ?? "Not set"} onPress={() => setEdit(true)} last />
       </Group>
       <Text style={{ color: t.muted, fontSize: 13, paddingHorizontal: 4 }}>To change your work or area, call ZARVA partner support.</Text>
       <Group t={t}>
         <ListRow t={t} icon="log-out-outline" title="Sign out" danger onPress={signOut} last />
       </Group>
+      <Sheet t={t} visible={ratingsOpen} onClose={() => setRatingsOpen(false)} title="Your ratings">
+        <ScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
+          {!ratings || ratings.summary.count === 0
+            ? <Text style={{ color: t.muted }}>No ratings yet. After each completed job the customer can rate you from 1 to 5 stars. Be on time, polite and leave the place clean.</Text>
+            : <><RatingOverview t={t} summary={ratings.summary} />{ratings.reviews.map((r) => <ReviewItem key={r.id} t={t} r={r} />)}</>}
+        </ScrollView>
+      </Sheet>
       <Sheet t={t} visible={edit} onClose={() => setEdit(false)} title="Payout account">
         <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
           <PayoutForm t={t} pro={pro} submitLabel="Save payout account" onSaved={(p) => { setPro(p); setEdit(false); }} />

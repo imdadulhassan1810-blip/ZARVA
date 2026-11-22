@@ -51,6 +51,11 @@ export function AccountScreen() {
       </Group>
 
       <Group t={t}>
+        <ListRow t={t} icon="help-buoy-outline" title="Help & support" subtitle="Questions, tickets and refunds" onPress={() => nav.navigate("Help")} />
+        <ListRow t={t} icon="chatbox-ellipses-outline" title="Send feedback" onPress={() => nav.navigate("Feedback")} last />
+      </Group>
+
+      <Group t={t}>
         <ListRow t={t} icon="shield-checkmark-outline" title="Safety" subtitle="Share your start code only with the professional at your door." />
         <ListRow t={t} icon="information-circle-outline" title="About ZARVA" subtitle={logoRules.tagline} value={`v${Constants.expoConfig?.version ?? ""}`} last />
       </Group>

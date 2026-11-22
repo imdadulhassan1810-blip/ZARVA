@@ -260,7 +260,7 @@ describe("home services: professionals", () => {
     expect(acc.body.booking.startCode).toBeUndefined();
 
     const custView = (await req("GET", `${P}/bookings/${b.id}`, cust)).body.booking;
-    expect(custView.pro).toEqual({ name: "Subrata Mondal", phone: "+919000000001" });
+    expect(custView.pro).toEqual({ name: "Subrata Mondal", phone: "+919000000001", rating: { average: null, count: 0 } });
 
     const st = (status: string, startCode?: string) => req("POST", `${P}/pro/jobs/${b.id}/status`, proS, { status, startCode });
     expect((await st("completed")).body.error.code).toBe("invalid_transition");

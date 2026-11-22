@@ -86,8 +86,13 @@ export interface HomeBooking {
   refundedPaise: number;
   /** Shown to the customer only. The pro enters it to start the job. */
   startCode?: string;
-  pro: { name: string; phone?: string } | null;
+  pro: { name: string; phone?: string; rating?: { average: number | null; count: number } } | null;
   customerNote: string | null;
+  /** Customer and admin views of a completed job. The PDF is at GET .../bookings/:id/invoice.pdf. */
+  hasInvoice?: boolean;
+  invoiceNumber?: string | null;
+  /** Customer view of a completed job: their rating, and whether they can (still) rate or change it. */
+  review?: HomeBookingReviewState;
   canCancel: boolean;
   events: HomeBookingEvent[];
   createdAt: string;
@@ -297,4 +302,91 @@ export function bookingCode(uuid: string): string {
     n /= 32n;
   }
   return `ZH-${s}`;
+}
+
+// ---------- Ratings and reviews ----------
+
+export const HOME_REVIEW_RULES = {
+  /** A customer can rate a completed job for this long after it finished. */
+  windowDays: 30,
+  /** ...and change their rating for this long after first posting it. */
+  editDays: 7,
+  maxComment: 500,
+} as const;
+
+/** Quick tags a customer can tick. Positive ones show for 4-5 stars, the rest for 1-3. */
+export const homeReviewTags = [
+  "on_time", "polite", "skilled", "clean_work", "good_value",
+  "late", "rude", "poor_work", "left_mess", "overcharged",
+] as const;
+export type HomeReviewTag = (typeof homeReviewTags)[number];
+export const homeReviewTagLabel: Record<HomeReviewTag, string> = {
+  on_time: "On time", polite: "Polite", skilled: "Knew the job", clean_work: "Left it clean", good_value: "Good value",
+  late: "Came late", rude: "Rude", poor_work: "Work not done well", left_mess: "Left a mess", overcharged: "Asked for extra money",
+};
+export const homeReviewGoodTags: HomeReviewTag[] = ["on_time", "polite", "skilled", "clean_work", "good_value"];
+export const homeReviewBadTags: HomeReviewTag[] = ["late", "rude", "poor_work", "left_mess", "overcharged"];
+
+export const homeReviewSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().trim().max(HOME_REVIEW_RULES.maxComment).optional(),
+  tags: z.array(z.enum(homeReviewTags)).max(5).default([]),
+});
+export type HomeReviewInput = z.infer<typeof homeReviewSchema>;
+
+/** A review as the public sees it: first name and last initial only, never a phone number. */
+export interface HomeReview {
+  id: string;
+  rating: number;
+  comment: string | null;
+  tags: HomeReviewTag[];
+  customerName: string;
+  categoryName: string;
+  categorySlug: string;
+  proName: string | null;
+  /** Services in the job, e.g. "Fan repair". */
+  serviceNames: string;
+  createdAt: string;
+  /** Admin only. Hidden reviews still count toward nothing and show nowhere. */
+  hidden?: boolean;
+  hiddenReason?: string | null;
+  bookingCode?: string;
+}
+export interface HomeRatingSummary {
+  /** Average of published reviews, one decimal. null when there are none yet. */
+  average: number | null;
+  count: number;
+  /** Count per star, index 0 = 1 star ... index 4 = 5 stars. */
+  stars: [number, number, number, number, number];
+}
+/** What the customer sees on a completed booking. */
+export interface HomeBookingReviewState {
+  review: HomeReview | null;
+  canReview: boolean;
+  canEdit: boolean;
+}
+
+/** "Riya Sen" -> "Riya S.", empty -> "ZARVA customer". */
+export function reviewerName(name: string | null | undefined): string {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "ZARVA customer";
+  const first = parts[0]!.slice(0, 20);
+  return parts.length > 1 ? `${first} ${parts[parts.length - 1]![0]!.toUpperCase()}.` : first;
+}
+
+export function emptyRatingSummary(): HomeRatingSummary {
+  return { average: null, count: 0, stars: [0, 0, 0, 0, 0] };
+}
+
+// ---------- Invoices ----------
+
+/** Invoice number, e.g. "ZH/26-27/000042". Sequential per Indian financial year (April-March), as GST requires. */
+export function financialYear(d: Date): string {
+  const ist = new Date(d.getTime() + IST_OFFSET_MIN * 60_000);
+  const y = ist.getUTCFullYear();
+  const start = ist.getUTCMonth() >= 3 ? y : y - 1;
+  return `${String(start).slice(2)}-${String(start + 1).slice(2)}`;
+}
+export function invoiceNumber(fy: string, seq: number): string {
+  return `ZH/${fy}/${String(seq).padStart(6, "0")}`;
 }

@@ -69,3 +69,21 @@ it("normalises email to lower case and rejects junk", () => {
   expect(emailSchema.parse("  Imdad@Gmail.COM ")).toBe("imdad@gmail.com");
   expect(emailSchema.safeParse("not-an-email").success).toBe(false);
 });
+
+describe("reviews and invoices helpers", () => {
+  it("shortens reviewer names and never shows an empty name", async () => {
+    const { reviewerName } = await import("./home");
+    expect(reviewerName("Riya Sen")).toBe("Riya S.");
+    expect(reviewerName("  sk md imdad ")).toBe("sk I.");
+    expect(reviewerName("Riya")).toBe("Riya");
+    expect(reviewerName(null)).toBe("ZARVA customer");
+  });
+  it("numbers invoices per Indian financial year (April to March, IST)", async () => {
+    const { financialYear, invoiceNumber } = await import("./home");
+    expect(financialYear(new Date("2026-11-23T05:00:00Z"))).toBe("26-27");
+    expect(financialYear(new Date("2027-03-31T18:00:00Z"))).toBe("26-27");
+    // 31 Mar 2027 18:30 UTC is 1 Apr 2027 00:00 IST: a new year.
+    expect(financialYear(new Date("2027-03-31T18:30:00Z"))).toBe("27-28");
+    expect(invoiceNumber("26-27", 42)).toBe("ZH/26-27/000042");
+  });
+});

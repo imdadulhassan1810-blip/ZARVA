@@ -58,6 +58,15 @@ const envSchema = z.object({
   /** SMS sign-in codes the whole platform may send per hour: a ceiling on the SMS bill. Raise it as you grow. */
   SMS_CODE_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(500),
   KYC_ENCRYPTION_KEY: z.string().min(32, "KYC_ENCRYPTION_KEY must be at least 32 characters").optional(),
+  /**
+   * Printed on customer invoices. Without INVOICE_GSTIN the PDF is a payment receipt, not a GST tax
+   * invoice (an unregistered business must not issue one). Set it once ZARVA has its GST number.
+   */
+  INVOICE_LEGAL_NAME: z.string().default("ZARVA"),
+  INVOICE_ADDRESS: z.string().default("Durgapur, West Bengal"),
+  INVOICE_STATE: z.string().default("West Bengal"),
+  INVOICE_GSTIN: z.string().trim().toUpperCase().regex(/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/, "INVOICE_GSTIN must be a 15-character GSTIN, e.g. 19ABCDE1234F1Z5").optional(),
+  INVOICE_SUPPORT_CONTACT: z.string().default("Help & support in the ZARVA app"),
 });
 export type Config = z.infer<typeof envSchema> & {
   /**

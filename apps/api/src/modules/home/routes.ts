@@ -1,6 +1,6 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import {
-  homeBookingStatuses, homeCreateBookingSchema, homeDocUploadSchema, homeProApplySchema, homeProDocKinds, homeProPayoutSchema, homeProUpdateSchema,
+  homeBookingStatuses, homeCreateBookingSchema, homeReviewSchema, homeDocUploadSchema, homeProApplySchema, homeProDocKinds, homeProPayoutSchema, homeProUpdateSchema,
 } from "@zarva/core";
 import { z } from "zod";
 import { AppError } from "../../lib/errors";
@@ -8,6 +8,8 @@ import { parse } from "../../lib/validate";
 import type { HomeServicesService } from "./service";
 import type { PartnerService } from "./partners";
 import type { EarningsService } from "./earnings";
+import type { InvoiceService } from "./invoices";
+import type { ReviewService } from "./reviews";
 
 const idParam = z.object({ id: z.string().uuid() });
 const confirmSchema = z.object({
@@ -23,8 +25,17 @@ const UPLOAD_LIMIT = 7.5 * 1024 * 1024;
 export function homeRoutes(
   app: FastifyInstance,
   prefix: string,
-  { svc, partners, earnings }: { svc: HomeServicesService; partners: PartnerService; earnings: EarningsService },
+  { svc, partners, earnings, invoices, reviews }: {
+    svc: HomeServicesService; partners: PartnerService; earnings: EarningsService; invoices: InvoiceService; reviews: ReviewService;
+  },
 ) {
+  const sendPdf = (reply: FastifyReply, pdf: { bytes: Uint8Array; filename: string }, download: boolean) =>
+    reply
+      .header("content-type", "application/pdf")
+      .header("cache-control", "private, no-store")
+      .header("content-disposition", `${download ? "attachment" : "inline"}; filename="${pdf.filename}"`)
+      .send(Buffer.from(pdf.bytes));
+
   // ----- Public catalogue -----
   app.get(`${prefix}/cities`, async () => ({ cities: await svc.cities() }));
 
@@ -36,6 +47,26 @@ export function homeRoutes(
   app.get(`${prefix}/slots`, async (req) => {
     const q = parse(z.object({ city: z.string().min(2).max(40), categoryId: z.string().uuid() }), req.query);
     return { days: await svc.slots(q.city, q.categoryId) };
+  });
+
+  // ----- Ratings (public: published reviews only, customer names shortened) -----
+  app.get(`${prefix}/reviews`, async (req) => {
+    const q = parse(z.object({
+      category: z.string().min(2).max(40).optional(),
+      limit: z.coerce.number().int().min(1).max(50).default(12),
+      minRating: z.coerce.number().int().min(1).max(5).optional(),
+      withComment: z.enum(["true", "false"]).optional(),
+    }), req.query);
+    return { reviews: await reviews.list({ categorySlug: q.category, limit: q.limit, minRating: q.minRating, withComment: q.withComment === "true" }) };
+  });
+  app.get(`${prefix}/reviews/summary`, async () => reviews.summaries());
+
+  // A short-lived link from POST .../invoice-link, so the phone app can open the PDF in the browser.
+  app.get(`${prefix}/invoice-download/:id`, async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const { token } = parse(z.object({ token: z.string().min(20).max(1000) }), req.query);
+    await invoices.checkLinkToken(id, token);
+    return sendPdf(reply, await invoices.pdf(id), false);
   });
 
   // ----- Customer app -----
@@ -54,6 +85,19 @@ export function homeRoutes(
       await svc.get(req.userId!, id);
       await app.services.payments.confirmFromClient(req.userId!, parse(confirmSchema, req.body));
       return { booking: await svc.get(req.userId!, id) };
+    });
+    r.get(`${prefix}/bookings/:id/review`, async (req) => reviews.forBooking(req.userId!, parse(idParam, req.params).id));
+    r.put(`${prefix}/bookings/:id/review`, async (req) => reviews.submit(req.userId!, parse(idParam, req.params).id, parse(homeReviewSchema, req.body)));
+    r.get(`${prefix}/bookings/:id/invoice.pdf`, async (req, reply) => {
+      const { id } = parse(idParam, req.params);
+      await svc.assertOwner(req.userId!, id);
+      return sendPdf(reply, await invoices.pdf(id), true);
+    });
+    r.post(`${prefix}/bookings/:id/invoice-link`, async (req) => {
+      const { id } = parse(idParam, req.params);
+      await svc.assertOwner(req.userId!, id);
+      await invoices.get(id); // fails early if the job isn't completed
+      return { path: `${prefix}/invoice-download/${id}?token=${await invoices.linkToken(id)}`, expiresInSeconds: 900 };
     });
     r.post(`${prefix}/bookings/:id/cancel`, async (req) => {
       const { reason } = parse(z.object({ reason: z.string().trim().max(200).optional() }), req.body ?? {});
@@ -83,6 +127,11 @@ export function homeRoutes(
     });
 
     r.get(`${prefix}/pro/jobs`, async (req) => svc.proJobs(req.userId!));
+    r.get(`${prefix}/pro/reviews`, async (req) => {
+      const pro = await partners.proFor(req.userId!);
+      if (!pro) return { summary: { average: null, count: 0, stars: [0, 0, 0, 0, 0] }, reviews: [] };
+      return reviews.forPro(pro.id);
+    });
     r.post(`${prefix}/pro/jobs/:id/accept`, async (req) => ({ booking: await svc.accept(req.userId!, parse(idParam, req.params).id) }));
     r.post(`${prefix}/pro/jobs/:id/status`, async (req) => {
       const body = parse(z.object({ status: z.enum(["on_the_way", "in_progress", "completed"]), startCode: z.string().regex(/^\d{4}$/).optional() }), req.body);
@@ -106,6 +155,16 @@ export function homeRoutes(
       const { reason } = parse(z.object({ reason: z.string().trim().min(3).max(200) }), req.body);
       return { booking: await svc.adminCancel(parse(idParam, req.params).id, reason) };
     });
+    r.get(`${prefix}/admin/bookings/:id/invoice.pdf`, async (req, reply) => sendPdf(reply, await invoices.pdf(parse(idParam, req.params).id), true));
+    r.get(`${prefix}/admin/reviews`, async (req) => {
+      const q = parse(z.object({ hidden: z.enum(["true", "false"]).optional(), maxRating: z.coerce.number().int().min(1).max(5).optional() }), req.query);
+      return { reviews: await reviews.adminList({ hidden: q.hidden === undefined ? undefined : q.hidden === "true", maxRating: q.maxRating }) };
+    });
+    r.post(`${prefix}/admin/reviews/:id/hide`, async (req) => {
+      const { reason } = parse(z.object({ reason: z.string().trim().min(3).max(200) }), req.body);
+      return { review: await reviews.setHidden(req.adminId!, parse(idParam, req.params).id, true, reason) };
+    });
+    r.post(`${prefix}/admin/reviews/:id/unhide`, async (req) => ({ review: await reviews.setHidden(req.adminId!, parse(idParam, req.params).id, false) }));
     r.get(`${prefix}/admin/pros`, async () => ({ pros: await partners.list() }));
     r.patch(`${prefix}/admin/pros/:id`, async (req) => {
       // active = approve a submitted profile or re-activate a suspended one.

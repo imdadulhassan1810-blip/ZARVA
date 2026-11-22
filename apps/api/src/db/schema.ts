@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
-  boolean, doublePrecision, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid,
+  bigserial, boolean, doublePrecision, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid,
 } from "drizzle-orm/pg-core";
 
 const timestamps = {
@@ -185,6 +185,68 @@ export const notifications = pgTable(
 );
 
 // Vertical modules own their tables (prefixed <id>_) but share one schema for migrations and typed queries.
+export const supportStatusEnum = pgEnum("support_status", ["open", "waiting_customer", "resolved"]);
+
+/**
+ * Customer support. Platform-wide: module + referenceId optionally point at a booking in a vertical
+ * (checked by that module when the ticket is created). Customers see only their own tickets.
+ */
+export const supportTickets = pgTable(
+  "support_tickets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Small running number for the "ZT-1042" code customers quote. */
+    seq: bigserial("seq", { mode: "number" }).notNull().unique(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    topic: text("topic").notNull(),
+    subject: text("subject").notNull(),
+    status: supportStatusEnum("status").notNull().default("open"),
+    module: text("module"),
+    referenceId: text("reference_id"),
+    /** Copy of what the reference was, e.g. "Booking ZH-7K3QF2 · Electrician". */
+    referenceLabel: text("reference_label"),
+    /** admin_accounts.id who resolved it. */
+    resolvedBy: uuid("resolved_by"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index("support_tickets_user_idx").on(t.userId, t.createdAt),
+    index("support_tickets_status_idx").on(t.status, t.updatedAt),
+    index("support_tickets_ref_idx").on(t.module, t.referenceId),
+  ],
+);
+
+export const supportMessages = pgTable(
+  "support_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    ticketId: uuid("ticket_id").notNull().references(() => supportTickets.id, { onDelete: "cascade" }),
+    /** Exactly one of userId / adminId is set. */
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    adminId: uuid("admin_id").references(() => adminAccounts.id, { onDelete: "set null" }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("support_messages_ticket_idx").on(t.ticketId, t.seq)],
+);
+
+/** "Send feedback" about ZARVA itself (not one booking). Read by the team in the admin app. */
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    kind: text("kind").notNull(),
+    rating: integer("rating"),
+    message: text("message").notNull(),
+    platform: text("platform").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("feedback_created_idx").on(t.createdAt), index("feedback_user_idx").on(t.userId, t.createdAt)],
+);
+
 export * from "../modules/home/schema";
 
 /**

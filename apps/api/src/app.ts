@@ -21,6 +21,8 @@ import { registerAdminGuard } from "./admin/guard";
 import { AdminAccountService } from "./admin/accounts";
 import { channelsFromConfig, NotificationService, type MessageChannel, type NotifyChannel } from "./notify";
 import { Vault } from "./lib/vault";
+import { SupportService } from "./support/service";
+import { supportRoutes } from "./support/routes";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -37,6 +39,8 @@ declare module "fastify" {
       vault: Vault;
       /** ZARVA team accounts (admin app). */
       admins: AdminAccountService;
+      /** Help & support tickets and app feedback. */
+      support: SupportService;
     };
     /** A session opened in the customer app. Sets req.userId. */
     requireCustomer: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
@@ -133,6 +137,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const admins = new AdminAccountService(deps.db, vault, deps.config.JWT_SECRET, deps.config.devShortcuts, now);
   app.decorate("services", {
     auth, payments: new PaymentService(deps.db, deps.paymentProvider), notify, payouts: deps.payoutProvider ?? new ManualPayoutProvider(), vault, admins,
+    support: new SupportService(deps.db, now),
   });
   app.addHook("onClose", async () => notify.stop());
   // One person can use the customer app and the partner app (like an Uber rider who also drives),
@@ -178,6 +183,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerAdminGuard(app);
   await app.register(meRoutes);
   await app.register(paymentRoutes);
+  await supportRoutes(app);
 
   // Dev only: stands in for the Razorpay checkout sheet so the whole booking flow runs without keys.
   if (deps.paymentProvider instanceof MockProvider && deps.config.devShortcuts) {

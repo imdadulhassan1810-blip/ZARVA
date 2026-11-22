@@ -6,6 +6,20 @@ import { formatPhone, homeStatusLabel, type HomeBooking } from "@zarva/core";
 import { BookingSummary, StatusChip, when } from "../../../../components/BookingBits";
 import { api, isSignedIn } from "../../../../lib/api";
 import { payForBooking } from "../../../../lib/pay";
+import { RateJob, RatingBadge } from "../../../../components/Reviews";
+
+/** Saves the invoice PDF (the API checks the booking is this customer's). */
+async function downloadInvoice(b: HomeBooking) {
+  const blob = await api.home.invoicePdf(b.id);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `ZARVA-${(b.invoiceNumber ?? b.code).replace(/\//g, "-")}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
 
 const LIVE_STEPS = ["confirmed", "assigned", "on_the_way", "in_progress", "completed"] as const;
 
@@ -69,9 +83,15 @@ export default function BookingDetail() {
         </div>
       )}
 
+      {b.status === "completed" && b.review && (
+        <div style={{ marginTop: 16 }}>
+          <RateJob b={b} onSaved={(review) => setB({ ...b, review })} />
+        </div>
+      )}
+
       {b.pro && (
         <div className="card" style={{ marginTop: 12 }}>
-          <strong>{b.pro.name}</strong>
+          <strong>{b.pro.name}</strong> <RatingBadge summary={b.pro.rating} />
           {b.pro.phone && <div><a href={`tel:${b.pro.phone}`}>{formatPhone(b.pro.phone)}</a></div>}
         </div>
       )}
@@ -85,6 +105,15 @@ export default function BookingDetail() {
 
       <h2>Bill</h2>
       <BookingSummary b={b} />
+      {b.hasInvoice && (
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
+          <button className="btn btn-ghost" disabled={busy} onClick={() => run(async () => {
+            await downloadInvoice(b);
+            if (!b.invoiceNumber) await load();
+          })}>⬇ Download invoice (PDF)</button>
+          {b.invoiceNumber && <span className="muted" style={{ fontSize: 13 }}>Invoice {b.invoiceNumber}</span>}
+        </div>
+      )}
 
       <h2>Timeline</h2>
       <ul className="timeline">
@@ -104,6 +133,10 @@ export default function BookingDetail() {
           void run(async () => setB((await api.home.cancel(b.id)).booking));
         }}>Cancel booking</button>
       )}
+      <div className="card help-strip">
+        <span><strong>Need help with this booking?</strong> <span className="muted">Our team replies here in the app.</span></span>
+        <Link className="btn btn-ghost" href={`/help/new?booking=${b.id}`}>Get help</Link>
+      </div>
       <p style={{ marginTop: 24 }}><Link href="/home-services/bookings" className="muted">← All bookings</Link></p>
     </div>
   );

@@ -15,6 +15,7 @@ import { CategoryScreen } from "./CategoryScreen";
 import { AddAddressScreen, CheckoutScreen } from "./CheckoutScreen";
 import { BookingScreen, BookingsScreen } from "./BookingsScreens";
 import { AccountScreen } from "./AccountScreen";
+import { FeedbackScreen, HelpScreen, NewTicketScreen, TicketScreen } from "./HelpScreens";
 
 /**
  * ZARVA (customer app). Tabs: Home, Bookings, Account. Booking flow screens push on top with
@@ -26,6 +27,10 @@ export type CustomerStackParams = {
   Checkout: undefined;
   AddAddress: undefined;
   Booking: { id: string; justBooked?: boolean };
+  Help: undefined;
+  NewTicket: { bookingId?: string; label?: string };
+  Ticket: { id: string; justCreated?: boolean };
+  Feedback: undefined;
 };
 export type CustomerTabParams = { Home: undefined; Bookings: undefined; Account: undefined };
 
@@ -76,6 +81,10 @@ export function CustomerApp({ t, onSwitchApp, onOtherApp, initialView }: {
             <Stack.Screen name="Checkout" component={CheckoutScreen} options={{ title: "Checkout" }} />
             <Stack.Screen name="AddAddress" component={AddAddressScreen} options={{ title: "Add address", presentation: "modal", animation: "slide_from_bottom" }} />
             <Stack.Screen name="Booking" component={BookingScreen} options={{ title: "Booking" }} />
+            <Stack.Screen name="Help" component={HelpScreen} options={{ title: "Help & support" }} />
+            <Stack.Screen name="NewTicket" component={NewTicketScreen} options={{ title: "Raise a ticket", presentation: "modal", animation: "slide_from_bottom" }} />
+            <Stack.Screen name="Ticket" component={TicketScreen} options={{ title: "Ticket" }} />
+            <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: "Send feedback", presentation: "modal", animation: "slide_from_bottom" }} />
           </Stack.Navigator>
         </NavigationContainer>
       </CustomerStore>

@@ -20,7 +20,7 @@ export function CustomerRules({ policy, compact = false }: { policy: HomePolicy;
             {refundSlabLines(policy).map((l) => <li key={l}>{l}</li>)}
           </ul>
         )}
-        <li>The GST on the service price is refunded in the same share. The service charge, the platform and maintenance charge, and the GST on them are not refunded.</li>
+        <li>The GST on the service price is refunded in the same share. The platform & convenience fee and the GST on it are not refunded.</li>
         <li>Less than {cutoff} before the slot, the booking can't be cancelled or moved.</li>
       </ul>
     </div>
@@ -33,7 +33,7 @@ export function RefundBreakdown({ q }: { q: HomeRefundQuote }) {
     <div className="stack" style={{ gap: 4 }}>
       <div className="sum-row"><span>Service price · {formatBps(q.refundBps)} back</span><span>{formatRupees(q.baseRefundPaise)}</span></div>
       <div className="sum-row"><span>GST on it · {formatBps(q.refundBps)} back</span><span>{formatRupees(q.gstRefundPaise)}</span></div>
-      {q.feeKeptPaise > 0 && <div className="sum-row muted"><span>Service &amp; platform charges and their GST {formatRupees(q.feeKeptPaise)} · not refunded</span><span>{formatRupees(0)}</span></div>}
+      {q.feeKeptPaise > 0 && <div className="sum-row muted"><span>Platform &amp; convenience fee + its GST {formatRupees(q.feeKeptPaise)} · not refunded</span><span>{formatRupees(0)}</span></div>}
       <div className="sum-row total"><span>You get back</span><span>{formatRupees(q.refundPaise)}</span></div>
       <div className="sum-row muted"><span>Cancellation charge</span><span>{formatRupees(q.chargePaise)}</span></div>
     </div>

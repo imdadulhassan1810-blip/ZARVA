@@ -112,7 +112,7 @@ export default function HomeServices() {
                     <div className="muted" style={{ fontSize: 14 }}>{s.description}</div>
                     <div className="svc-meta">
                       <span className="price">{formatRupees(homeUnitPrice(s.pricePaise, policy))}</span>
-                      <span className="muted" style={{ fontSize: 13 }}>+ charges &amp; GST</span>
+                      <span className="muted" style={{ fontSize: 13 }}>+ fee &amp; GST</span>
                       <span className="muted">· {s.durationMin < 60 ? `${s.durationMin} min` : `${Math.round(s.durationMin / 6) / 10} hr`}</span>
                     </div>
                     {s.inclusions.length > 0 && (
@@ -145,7 +145,7 @@ export default function HomeServices() {
           <div>
             <strong>{count} item{count > 1 ? "s" : ""} · {formatRupees(totals.totalPaise)}</strong>
             <div className="muted" style={{ fontSize: 13 }}>
-              Incl. service &amp; platform charges and GST
+              Incl. platform &amp; convenience fee and GST
             </div>
           </div>
           <button className="btn" onClick={() => router.push("/home-services/checkout")}>Continue</button>

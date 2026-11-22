@@ -40,13 +40,18 @@ export function AdminPolicy() {
         <label>Base price = professional&apos;s quote plus this %
           <input inputMode="decimal" value={pct(p.markupBps)} onChange={(e) => set({ markupBps: toBps(e.target.value.replace(/[^\d.]/g, "")) })} />
         </label>
-        <label>Service charge, % of the base price (never refunded)
+        <span className="muted" style={{ fontSize: 13 }}>Customers see the two charges below as one &quot;Platform &amp; convenience fee&quot;. Neither is refunded.</span>
+        <label>Service charge (Operations), % of the base price
           <input inputMode="decimal" value={pct(p.serviceChargeBps)} onChange={(e) => set({ serviceChargeBps: toBps(e.target.value.replace(/[^\d.]/g, "")) })} />
         </label>
-        <label>Platform and maintenance charge, % of the base price (never refunded)
+        <label>Platform charge (Tech), % of the base price
           <input inputMode="decimal" value={pct(p.platformChargeBps)} onChange={(e) => set({ platformChargeBps: toBps(e.target.value.replace(/[^\d.]/g, "")) })} />
         </label>
-        <ExampleBill p={p} />
+        <label>Minimum platform &amp; convenience fee, ₹ (both charges together, before GST)
+          <input inputMode="decimal" value={String(p.minFeePaise / 100)} onChange={(e) => set({ minFeePaise: Math.round(Number(e.target.value.replace(/[^\d.]/g, "")) * 100) || 0 })} />
+        </label>
+        <ExampleBill p={p} quotePaise={10_000} />
+        <ExampleBill p={p} quotePaise={50_000} />
       </div>
 
       <h2 style={{ marginBottom: 0 }}>Customers</h2>
@@ -112,12 +117,15 @@ export function AdminPolicy() {
 }
 
 /** Live example so the admin sees what a ₹1,000 quote costs the customer with the rates on screen. */
-function ExampleBill({ p }: { p: HomePolicy }) {
-  const t = homeTotals([{ unitPricePaise: 100_000, qty: 1 }], p);
+function ExampleBill({ p, quotePaise }: { p: HomePolicy; quotePaise: number }) {
+  const t = homeTotals([{ unitPricePaise: quotePaise, qty: 1 }], p);
+  const x = t.pricing;
   return (
     <div className="stack" style={{ gap: 2, fontSize: 14 }}>
-      <strong>Example: professional quotes {formatRupees(100_000)}</strong>
+      <strong>Example: professional quotes {formatRupees(quotePaise)}</strong>
       {homeBillLines(t).map((l) => <div key={l.key} className="sum-row"><span>{l.label}</span><span>{formatRupees(l.paise)}</span></div>)}
+      <div className="sum-row muted"><span>· of which Operations (service charge){x.minFeeApplied ? ", minimum applied" : ""}</span><span>{formatRupees(x.serviceChargePaise)}</span></div>
+      <div className="sum-row muted"><span>· of which Tech (platform charge)</span><span>{formatRupees(x.platformChargePaise)}</span></div>
       <div className="sum-row total"><span>Customer pays</span><span>{formatRupees(t.totalPaise)}</span></div>
       <div className="sum-row muted"><span>Professional earns</span><span>{formatRupees(t.pricing.quotePaise)}</span></div>
     </div>

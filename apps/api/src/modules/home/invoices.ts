@@ -43,7 +43,7 @@ export interface InvoiceData {
   lines: { name: string; qty: number; unitPaise: number; amountPaise: number }[];
   /** Legacy convenience fee (bookings before pre-GST prices). New bills use `charges`. */
   feePaise: number;
-  /** Service and platform charges, before GST. Missing on bills issued before 2026-11-22. */
+  /** Platform & convenience fee (service + platform charges), before GST. Missing on bills issued before 2026-11-22. */
   charges?: { label: string; amountPaise: number }[];
   /** GST charged on the bill (base + charges), shown as one line on a receipt when there is no GSTIN. */
   gstPaise?: number;
@@ -87,7 +87,7 @@ export class InvoiceService {
     const a = b.address as HomeAddressSnapshot;
     const gstin = this.config.INVOICE_GSTIN ?? null;
     const buyerState = city?.state ?? this.config.INVOICE_STATE;
-    // New bookings: 18% GST on base + service charge + platform charge, frozen in b.pricing.
+    // New bookings: 18% GST on base + platform & convenience fee, frozen in b.pricing.
     // Legacy bookings: the price included GST, so it is worked back from the total.
     const p = b.pricing;
     const taxablePaise = p ? p.taxablePaise : Math.round((b.totalPaise * 10_000) / (10_000 + GST_BPS));
@@ -100,8 +100,7 @@ export class InvoiceService {
     }
     const charges = p
       ? [
-        { label: `Service charge (${p.serviceChargeBps / 100}% of the service price)`, amountPaise: p.serviceChargePaise },
-        { label: `Platform & maintenance charge (${p.platformChargeBps / 100}% of the service price)`, amountPaise: p.platformChargePaise },
+        { label: "Platform & convenience fee", amountPaise: p.serviceChargePaise + p.platformChargePaise },
       ].filter((c) => c.amountPaise > 0)
       : undefined;
     const data: InvoiceData = {
@@ -350,7 +349,7 @@ export async function renderInvoice(d: InvoiceData): Promise<Uint8Array> {
   // Notes.
   const notes = [
     d.charges
-      ? d.tax ? "GST is charged at 18% on the service price plus the service and platform charges." : "ZARVA's GST registration is pending, so this is a bill and payment receipt, not a GST tax invoice."
+      ? d.tax ? "GST is charged at 18% on the service price plus the platform & convenience fee." : "ZARVA's GST registration is pending, so this is a bill and payment receipt, not a GST tax invoice."
       : d.tax ? "Prices include GST. Amounts above are worked out from the GST-inclusive price." : "ZARVA is not GST-registered yet, so this is a bill and payment receipt, not a GST tax invoice.",
     "Spare parts, if any, are billed separately by the professional at MRP and are not part of this bill.",
     `Questions about this bill? ${d.seller.contact}. Quote booking ${d.bookingCode}.`,

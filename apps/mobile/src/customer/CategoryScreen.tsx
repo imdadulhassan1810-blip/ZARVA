@@ -109,7 +109,7 @@ export function CartBar({ tabBar }: { tabBar?: boolean }) {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ color: "#fff", fontWeight: "800" }}>{count} item{count > 1 ? "s" : ""} · {formatRupees(totals.totalPaise)}</Text>
-          <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 12 }}>Incl. service & platform charges and GST</Text>
+          <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 12 }}>Incl. platform & convenience fee and GST</Text>
         </View>
         <Text style={{ color: "#fff", fontWeight: "800" }}>View cart</Text>
         <Ionicons name="chevron-forward" size={18} color="#fff" />

@@ -138,7 +138,7 @@ export function CheckoutScreen() {
         <View style={{ flexDirection: "row", gap: 8, alignItems: "center", paddingHorizontal: 4 }}>
           <Ionicons name="shield-checkmark" size={16} color={t.success} />
           <Text style={{ color: t.muted, fontSize: 13, flex: 1 }}>
-            Free reschedule, and cancel with a refund, until {formatNotice(policy.customerCutoffMinutes)} before your slot. The earlier you cancel, the more you get back (up to 100% of the service price). The service and platform charges and the GST on them aren&apos;t refunded.
+            Free reschedule, and cancel with a refund, until {formatNotice(policy.customerCutoffMinutes)} before your slot. The earlier you cancel, the more you get back (up to 100% of the service price). The platform &amp; convenience fee and its GST aren&apos;t refunded.
           </Text>
         </View>
         {error && <ErrorBanner t={t} message={error} />}

@@ -102,6 +102,11 @@ export default function Admin() {
                     <strong>{b.code} · {b.categoryName} · {when(b)}</strong><StatusChip b={b} />
                   </div>
                   <div>{itemsLine(b)} · <strong>{formatRupees(b.totalPaise)}</strong> · {b.payMode === "online" ? (b.paid ? "paid online" : "unpaid") : "pay after service"}</div>
+                  {b.pricing && (
+                    <div className="muted" style={{ fontSize: 13 }}>
+                      Base {formatRupees(b.pricing.basePaise)} · Operations {formatRupees(b.pricing.serviceChargePaise)} · Tech {formatRupees(b.pricing.platformChargePaise)}{b.pricing.minFeeApplied ? " (minimum fee)" : ""} · GST {formatRupees(b.pricing.gstPaise)} · pro earns {formatRupees(b.pricing.proEarningPaise)}
+                    </div>
+                  )}
                   <div className="muted">{b.address.name}, {formatPhone(b.address.phone)} · {[b.address.line1, b.address.line2, b.address.pincode].filter(Boolean).join(", ")}</div>
                   {b.cancellation && (
                     <div className="muted">

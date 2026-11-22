@@ -46,28 +46,39 @@ import { bookableSlotStarts, bookingCode, formatRupees, formatSlot, istDate, ist
 import { DEFAULT_HOME_POLICY, homeBillLines, homeProEarning, homeRefundQuote, homeTotals, homeUnitPrice } from "./home-policy";
 
 describe("home services pricing: base (quote + 5%) + 6% service + 3% platform + 18% GST on all three; pro earns quote - 10%", () => {
-  it("the user's example: quote ₹100 -> customer pays ₹135.05, pro earns ₹90", () => {
+  it("the user's example: quote ₹100 -> 9% fee is ₹9.45, so the ₹15 minimum applies: customer pays ₹141.60, pro earns ₹90", () => {
     const t = homeTotals([{ unitPricePaise: 10_000, qty: 1 }]);
     expect(t.pricing).toEqual({
       quotePaise: 10_000, markupBps: 500, basePaise: 10_500,
       proCommissionBps: 1000, proCommissionPaise: 1_000, proEarningPaise: 9_000,
-      serviceChargeBps: 600, serviceChargePaise: 630,
-      platformChargeBps: 300, platformChargePaise: 315,
-      gstBps: 1800, taxablePaise: 11_445, gstPaise: 2_060, gstOnBasePaise: 1_890, gstOnChargesPaise: 170, // 18% of 114.45 = 20.601
+      serviceChargeBps: 600, serviceChargePaise: 1_000, // ₹15 split 6:3 -> Operations ₹10, Tech ₹5
+      platformChargeBps: 300, platformChargePaise: 500,
+      minFeePaise: 1_500, minFeeApplied: true,
+      gstBps: 1800, taxablePaise: 12_000, gstPaise: 2_160, gstOnBasePaise: 1_890, gstOnChargesPaise: 270,
     });
-    expect(t).toMatchObject({ subtotalPaise: 10_500, feePaise: 630 + 315 + 170, totalPaise: 13_505 });
+    expect(t).toMatchObject({ subtotalPaise: 10_500, feePaise: 1_500 + 270, totalPaise: 14_160 });
     expect(homeBillLines(t)).toEqual([
       { key: "base", label: "Service price", paise: 10_500 },
-      { key: "service", label: "Service charge 6%", paise: 630 },
-      { key: "platform", label: "Platform & maintenance charge 3%", paise: 315 },
-      { key: "gst", label: "GST 18%", paise: 2_060 },
+      { key: "fee", label: "Platform & convenience fee", paise: 1_500 },
+      { key: "gst", label: "GST 18%", paise: 2_160 },
     ]);
+    // Without the minimum the rule is 6% + 3%: ₹6.30 + ₹3.15, GST ₹20.60, total ₹135.05.
+    const noMin = homeTotals([{ unitPricePaise: 10_000, qty: 1 }], { ...DEFAULT_HOME_POLICY, minFeePaise: 0 });
+    expect(noMin.pricing).toMatchObject({ serviceChargePaise: 630, platformChargePaise: 315, minFeeApplied: false, gstPaise: 2_060 });
+    expect(noMin.totalPaise).toBe(13_505);
+  });
+  it("the minimum only touches small jobs: ₹99 -> ₹140.36; ₹500 -> ₹675.26 unchanged", () => {
+    expect(homeTotals([{ unitPricePaise: 9_900, qty: 1 }]).totalPaise).toBe(14_036);
+    const big = homeTotals([{ unitPricePaise: 50_000, qty: 1 }]);
+    expect(big.pricing).toMatchObject({ basePaise: 52_500, serviceChargePaise: 3_150, platformChargePaise: 1_575, minFeeApplied: false });
+    expect(big.totalPaise).toBe(67_526);
+    expect(homeTotals([]).totalPaise).toBe(0); // an empty cart pays no minimum
   });
   it("fan repair quoted ₹199: rounds each amount to the nearest paisa, half up, and the lines add up", () => {
     expect(homeUnitPrice(19_900)).toBe(20_895);
     const t = homeTotals([{ unitPricePaise: 19_900, qty: 1 }]);
     // 6% of 208.95 = 12.537 -> 12.54; 3% = 6.2685 -> 6.27; 18% of 227.76 = 40.9968 -> 41.00.
-    expect(t.pricing).toMatchObject({ basePaise: 20_895, serviceChargePaise: 1_254, platformChargePaise: 627, taxablePaise: 22_776, gstPaise: 4_100, gstOnBasePaise: 3_761, proEarningPaise: 17_910 });
+    expect(t.pricing).toMatchObject({ basePaise: 20_895, serviceChargePaise: 1_254, platformChargePaise: 627, minFeeApplied: false, taxablePaise: 22_776, gstPaise: 4_100, gstOnBasePaise: 3_761, proEarningPaise: 17_910 });
     expect(t.totalPaise).toBe(26_876);
     expect(homeBillLines(t).reduce((s, l) => s + l.paise, 0)).toBe(t.totalPaise);
     expect(t.subtotalPaise + t.pricing.gstOnBasePaise + t.feePaise).toBe(t.totalPaise);
@@ -79,7 +90,7 @@ describe("home services pricing: base (quote + 5%) + 6% service + 3% platform + 
     expect(t.pricing).toMatchObject({ quotePaise: 34_700, basePaise: 10_395 * 2 + 15_645, proEarningPaise: 34_700 - 3_470 });
   });
   it("uses the admin's rates", () => {
-    const t = homeTotals([{ unitPricePaise: 10_000, qty: 1 }], { markupBps: 0, proCommissionBps: 2000, serviceChargeBps: 500, platformChargeBps: 0 });
+    const t = homeTotals([{ unitPricePaise: 10_000, qty: 1 }], { markupBps: 0, proCommissionBps: 2000, serviceChargeBps: 500, platformChargeBps: 0, minFeePaise: 0 });
     expect(t).toMatchObject({ subtotalPaise: 10_000, totalPaise: 10_500 + 1_890 });
     expect(t.pricing.proEarningPaise).toBe(8_000);
   });

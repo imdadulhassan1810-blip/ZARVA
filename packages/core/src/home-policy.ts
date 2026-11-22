@@ -36,6 +36,8 @@ export interface HomePolicy {
   serviceChargeBps: number;
   /** Platform and maintenance charge on the base price. 300 = 3%. Never refunded. */
   platformChargeBps: number;
+  /** Service + platform charges together are at least this (before GST). 1500 = ₹15. */
+  minFeePaise: number;
   /** Customers can't cancel or reschedule a paid booking less than this long before the slot. */
   customerCutoffMinutes: number;
   /** Longest notice first. A cancellation earlier than every slab is impossible (bookings are at most 7 days ahead). */
@@ -55,6 +57,7 @@ export const DEFAULT_HOME_POLICY: HomePolicy = {
   proCommissionBps: 1_000,
   serviceChargeBps: 600,
   platformChargeBps: 300,
+  minFeePaise: 1_500,
   customerCutoffMinutes: 90,
   refundSlabs: [
     { minMinutesBefore: 24 * 60, refundBps: 10_000 },
@@ -80,6 +83,7 @@ export const homePolicySchema = z
     proCommissionBps: z.number().int().min(0).max(5_000).default(DEFAULT_HOME_POLICY.proCommissionBps),
     serviceChargeBps: z.number().int().min(0).max(5_000).default(DEFAULT_HOME_POLICY.serviceChargeBps),
     platformChargeBps: z.number().int().min(0).max(5_000).default(DEFAULT_HOME_POLICY.platformChargeBps),
+    minFeePaise: z.number().int().min(0).max(100_000).default(DEFAULT_HOME_POLICY.minFeePaise),
     customerCutoffMinutes: z.number().int().min(0).max(24 * 60),
     refundSlabs: z.array(z.object({ minMinutesBefore: z.number().int().min(0).max(14 * 24 * 60), refundBps: bps })).min(1).max(8),
     maxReschedules: z.number().int().min(0).max(10),
@@ -122,10 +126,15 @@ export interface HomePriceBreakdown {
   proEarningPaise: number;
   /** Base price the customer sees: each item's quote plus the markup, x qty. */
   basePaise: number;
+  /** Operations bucket. With platformChargePaise it is shown to customers as one "Platform & convenience fee". */
   serviceChargeBps: number;
   serviceChargePaise: number;
+  /** Tech bucket. */
   platformChargeBps: number;
   platformChargePaise: number;
+  /** The minimum fee in force when booked, and whether it raised the fee. */
+  minFeePaise: number;
+  minFeeApplied: boolean;
   gstBps: number;
   /** base + service charge + platform charge: what GST is charged on. */
   taxablePaise: number;
@@ -147,7 +156,7 @@ export interface HomeTotals {
   pricing: HomePriceBreakdown;
 }
 
-type Rates = Pick<HomePolicy, "markupBps" | "proCommissionBps" | "serviceChargeBps" | "platformChargeBps">;
+type Rates = Pick<HomePolicy, "markupBps" | "proCommissionBps" | "serviceChargeBps" | "platformChargeBps" | "minFeePaise">;
 
 /** Price of one item as the customer sees it: the professional's quote plus the markup, to the paisa. */
 export function homeUnitPrice(quotePaise: number, rates: Pick<HomePolicy, "markupBps"> = DEFAULT_HOME_POLICY): number {
@@ -159,8 +168,8 @@ export function homeUnitPrice(quotePaise: number, rates: Pick<HomePolicy, "marku
  * this one function (the API stores its result on the booking).
  *
  *   1. base price      = professional's quote + 5%    (per item, then x qty and summed)
- *   2. service charge  = 6% of base
- *   3. platform charge = 3% of base
+ *   2. service charge  = 6% of base     } shown to the customer as one "Platform & convenience fee",
+ *   3. platform charge = 3% of base     } at least ₹15 together (split 6:3 when the minimum applies)
  *   4. GST             = 18% of (1 + 2 + 3)
  *   customer pays      = 1 + 2 + 3 + 4
  *   professional earns = quote - 10% commission
@@ -168,14 +177,22 @@ export function homeUnitPrice(quotePaise: number, rates: Pick<HomePolicy, "marku
  * All percentages are admin-editable. Each amount is rounded to the nearest paisa on its own
  * (half a paisa rounds up), the charges and GST on the whole order, and the total is the sum of
  * the rounded lines, so the bill always adds up exactly.
- * Example: quote ₹100 -> base ₹105, service ₹6.30, platform ₹3.15, GST ₹20.60, total ₹135.05; pro earns ₹90.
+ * Examples: quote ₹100 -> base ₹105, fee ₹15 (9% would be ₹9.45), GST ₹21.60, total ₹141.60; pro earns ₹90.
+ *           quote ₹199 -> base ₹208.95, fee ₹18.81 (₹12.54 + ₹6.27), GST ₹41.00, total ₹268.76.
  */
 export function homeTotals(lines: { unitPricePaise: number; qty: number }[], rates: Rates = DEFAULT_HOME_POLICY): HomeTotals {
   const quotePaise = lines.reduce((s, l) => s + l.unitPricePaise * l.qty, 0);
   const proCommissionPaise = bpsOf(quotePaise, rates.proCommissionBps);
   const basePaise = lines.reduce((s, l) => s + homeUnitPrice(l.unitPricePaise, rates) * l.qty, 0);
-  const serviceChargePaise = bpsOf(basePaise, rates.serviceChargeBps);
-  const platformChargePaise = bpsOf(basePaise, rates.platformChargeBps);
+  let serviceChargePaise = bpsOf(basePaise, rates.serviceChargeBps);
+  let platformChargePaise = bpsOf(basePaise, rates.platformChargeBps);
+  // Minimum fee: raise the two charges to the minimum together, keeping their 6:3 split (rounded, operations first).
+  const minFeeApplied = basePaise > 0 && serviceChargePaise + platformChargePaise < rates.minFeePaise;
+  if (minFeeApplied) {
+    const bothBps = rates.serviceChargeBps + rates.platformChargeBps;
+    serviceChargePaise = bothBps > 0 ? Math.floor((rates.minFeePaise * rates.serviceChargeBps + bothBps / 2) / bothBps) : rates.minFeePaise;
+    platformChargePaise = rates.minFeePaise - serviceChargePaise;
+  }
   const taxablePaise = basePaise + serviceChargePaise + platformChargePaise;
   const gstPaise = bpsOf(taxablePaise, HOME_GST_BPS);
   const gstOnBasePaise = Math.min(gstPaise, bpsOf(basePaise, HOME_GST_BPS));
@@ -189,6 +206,7 @@ export function homeTotals(lines: { unitPricePaise: number; qty: number }[], rat
       proCommissionBps: rates.proCommissionBps, proCommissionPaise, proEarningPaise: quotePaise - proCommissionPaise,
       serviceChargeBps: rates.serviceChargeBps, serviceChargePaise,
       platformChargeBps: rates.platformChargeBps, platformChargePaise,
+      minFeePaise: rates.minFeePaise, minFeeApplied,
       gstBps: HOME_GST_BPS, taxablePaise, gstPaise, gstOnBasePaise, gstOnChargesPaise,
     },
   };
@@ -201,7 +219,10 @@ export function homeBaseAndGst(b: { subtotalPaise: number; pricing?: HomePriceBr
 
 export interface HomeBillLine { key: string; label: string; paise: number }
 
-/** The bill, line by line, in the same words on checkout, the booking page and the invoice. Lines add up to the total. */
+/**
+ * The customer's bill, line by line, in the same words on checkout, the booking page and the invoice.
+ * The service and platform charges are one line for customers; admin sees them apart. Lines add up to the total.
+ */
 export function homeBillLines(b: { subtotalPaise: number; feePaise: number; pricing?: HomePriceBreakdown | null }): HomeBillLine[] {
   const p = b.pricing;
   if (!p) {
@@ -212,8 +233,7 @@ export function homeBillLines(b: { subtotalPaise: number; feePaise: number; pric
   }
   return [
     { key: "base", label: "Service price", paise: p.basePaise },
-    { key: "service", label: `Service charge ${formatBps(p.serviceChargeBps)}`, paise: p.serviceChargePaise },
-    { key: "platform", label: `Platform & maintenance charge ${formatBps(p.platformChargeBps)}`, paise: p.platformChargePaise },
+    { key: "fee", label: "Platform & convenience fee", paise: p.serviceChargePaise + p.platformChargePaise },
     { key: "gst", label: `GST ${formatBps(p.gstBps)}`, paise: p.gstPaise },
   ].filter((l) => l.paise > 0 || l.key === "base");
 }

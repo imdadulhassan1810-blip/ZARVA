@@ -183,7 +183,7 @@ export default function Checkout() {
           <div key={l.s.id} className="sum-row"><span>{l.s.name} × {l.qty}</span><span>{formatRupees(homeUnitPrice(l.s.pricePaise, rates) * l.qty)}</span></div>
         ))}
         <ChargeLines t={totals} />
-        <span className="muted" style={{ fontSize: 13 }}>The service and platform charges and the GST on them are not refunded if you cancel.</span>
+        <span className="muted" style={{ fontSize: 13 }}>The platform &amp; convenience fee and its GST are not refunded if you cancel.</span>
       </div>
 
       {error && <p className="error" role="alert">{error}</p>}

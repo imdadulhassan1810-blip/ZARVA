@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
-  bigserial, boolean, customType, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid,
+  bigserial, boolean, check, customType, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid,
 } from "drizzle-orm/pg-core";
 import { addresses, payments, users } from "../../db/schema";
 
@@ -244,3 +244,52 @@ export const homePayoutEvents = pgTable(
   },
   (t) => [uniqueIndex("home_payout_events_dedupe_idx").on(t.provider, t.eventId)],
 );
+
+/**
+ * One rating per completed booking, written by the customer who booked it. Never deleted:
+ * admin can hide one (abuse, phone numbers in the text) and the reason is kept.
+ */
+export const homeReviews = pgTable(
+  "home_reviews",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    bookingId: uuid("booking_id").notNull().unique().references(() => homeBookings.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    proId: uuid("pro_id").references(() => homePros.id),
+    categoryId: uuid("category_id").notNull().references(() => homeCategories.id),
+    rating: integer("rating").notNull(),
+    comment: text("comment"),
+    tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+    /** "Riya S." at the time of writing. */
+    customerName: text("customer_name").notNull(),
+    hiddenAt: timestamp("hidden_at", { withTimezone: true }),
+    hiddenReason: text("hidden_reason"),
+    hiddenBy: uuid("hidden_by"),
+    ...timestamps,
+  },
+  (t) => [
+    index("home_reviews_pro_idx").on(t.proId, t.createdAt),
+    index("home_reviews_category_idx").on(t.categoryId, t.createdAt),
+    index("home_reviews_created_idx").on(t.createdAt),
+    check("home_reviews_rating_check", sql`${t.rating} between 1 and 5`),
+  ],
+);
+
+/** Last invoice number used per financial year ("26-27"). Numbers never repeat and never skip. */
+export const homeInvoiceCounters = pgTable("home_invoice_counters", {
+  fy: text("fy").primaryKey(),
+  last: integer("last").notNull(),
+});
+
+/**
+ * Issued once, when the job is completed, and frozen: the PDF is always drawn from this row, so a
+ * later price or name change never alters an invoice the customer already has.
+ */
+export const homeInvoices = pgTable("home_invoices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bookingId: uuid("booking_id").notNull().unique().references(() => homeBookings.id, { onDelete: "cascade" }),
+  number: text("number").notNull().unique(),
+  issuedAt: timestamp("issued_at", { withTimezone: true }).notNull(),
+  /** Everything printed on the invoice: seller, buyer, lines, tax split. See invoices.ts InvoiceData. */
+  data: jsonb("data").notNull(),
+});

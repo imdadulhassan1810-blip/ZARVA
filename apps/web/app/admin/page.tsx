@@ -8,11 +8,12 @@ import {
 } from "@zarva/core";
 import { StatusChip, itemsLine, when } from "../../components/BookingBits";
 import { AdminTeam } from "../../components/AdminTeam";
+import { AdminFeedback, AdminReviews, AdminSupport, adminDownloadInvoice } from "../../components/AdminCare";
 import { Amount, BalanceCard, LedgerList, PayoutChip } from "../../components/Ledger";
 import { adminApi as api, isSignedIn } from "../../lib/api";
 import { loginUrl, signOut } from "../../lib/roles";
 
-type Tab = "bookings" | "pros" | "payouts" | "prices" | "team";
+type Tab = "bookings" | "support" | "reviews" | "feedback" | "pros" | "payouts" | "prices" | "team";
 
 /** Operations console for the ZARVA team. Access: a ZARVA-issued admin login (see /admin/login). */
 export default function Admin() {
@@ -72,9 +73,9 @@ export default function Admin() {
     <div style={{ marginBottom: 64 }}>
       <h1>Home services admin</h1>
       <div className="day-row" role="tablist">
-        {(["bookings", "pros", "payouts", "prices", "team"] as Tab[]).map((t) => (
+        {(["bookings", "support", "reviews", "feedback", "pros", "payouts", "prices", "team"] as Tab[]).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={`day ${tab === t ? "day-on" : ""}`} onClick={() => setTab(t)}>
-            {t === "bookings" ? "Bookings"
+            {t === "bookings" ? "Bookings" : t === "support" ? "Support" : t === "reviews" ? "Reviews" : t === "feedback" ? "Feedback"
               : t === "pros" ? `Professionals${pros.some((p) => p.status === "pending") ? ` (${pros.filter((p) => p.status === "pending").length} to review)` : ""}`
               : t === "payouts" ? `Payouts${balances.payouts.some((p) => p.status === "manual") ? " •" : ""}` : t === "prices" ? "Prices & commission" : "Team"}
           </button>
@@ -102,6 +103,9 @@ export default function Admin() {
                   <div>{itemsLine(b)} · <strong>{formatRupees(b.totalPaise)}</strong> · {b.payMode === "online" ? (b.paid ? "paid online" : "unpaid") : "pay after service"}</div>
                   <div className="muted">{b.address.name}, {formatPhone(b.address.phone)} · {[b.address.line1, b.address.line2, b.address.pincode].filter(Boolean).join(", ")}</div>
                   {b.pro && <div>Professional: {b.pro.name}{b.pro.phone ? ` (${formatPhone(b.pro.phone)})` : ""}</div>}
+                  {b.hasInvoice && (
+                    <div><button className="btn btn-ghost" onClick={() => void run(() => adminDownloadInvoice(b.id, b.invoiceNumber ?? b.code))}>⬇ Invoice{b.invoiceNumber ? ` ${b.invoiceNumber}` : ""}</button></div>
+                  )}
                   {(b.status === "confirmed" || b.status === "assigned") && (
                     <div className="row">
                       <select defaultValue="" onChange={(e) => e.target.value && void run(() => api.home.admin.assign(b.id, e.target.value))}>
@@ -131,6 +135,9 @@ export default function Admin() {
       {tab === "payouts" && <Payouts data={balances} run={run} />}
 
       {tab === "team" && <AdminTeam />}
+      {tab === "support" && <AdminSupport />}
+      {tab === "reviews" && <AdminReviews />}
+      {tab === "feedback" && <AdminFeedback />}
 
       {tab === "prices" && (
         <div className="stack" style={{ marginTop: 12 }}>

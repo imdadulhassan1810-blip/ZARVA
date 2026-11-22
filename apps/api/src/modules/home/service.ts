@@ -12,6 +12,8 @@ import { AppError, badRequest, conflict, forbidden, notFound, pgErrorCode } from
 import type { PaymentRow, PaymentService } from "../../payments/service";
 import type { NotificationService } from "../../notify";
 import type { EarningsService } from "./earnings";
+import type { InvoiceService } from "./invoices";
+import type { ReviewService } from "./reviews";
 import {
   homeBookingEvents, homeBookingItems, homeBookings, homeCategories, homeCities, homePros, homeServices,
 } from "./schema";
@@ -33,6 +35,8 @@ export class HomeServicesService {
     private now: () => Date,
     private notify: NotificationService,
     private earnings: EarningsService,
+    private invoices: InvoiceService,
+    private reviews: ReviewService,
     private opts: { onlinePayments: boolean } = { onlinePayments: true },
   ) {
     payments.onStatusChange("home", (p, tx) => this.onPayment(p, tx));
@@ -245,6 +249,11 @@ export class HomeServicesService {
     return this.load(id, "customer");
   }
 
+  /** Throws 404 unless this customer made the booking. */
+  async assertOwner(userId: string, id: string): Promise<void> {
+    await this.owned(userId, id);
+  }
+
   private async owned(userId: string, id: string): Promise<BookingRow> {
     const b = await this.db.query.homeBookings.findFirst({ where: and(eq(homeBookings.id, id), eq(homeBookings.userId, userId)) });
     if (!b) throw notFound("Booking");
@@ -395,6 +404,8 @@ export class HomeServicesService {
       }
       if (to === "completed") {
         await this.earnings.recordJob(tx, u, pro);
+        // The bill exists from the moment the job is done, numbered in completion order.
+        await this.invoices.issue(tx, u);
         await this.tellCustomer(tx, b, "job_completed", { amount: formatRupees(b.totalPaise) });
       }
     });
@@ -479,6 +490,10 @@ export class HomeServicesService {
       b.proId ? this.db.query.homePros.findFirst({ where: eq(homePros.id, b.proId) }) : Promise.resolve(undefined),
     ]);
     const proUser = pro && view !== "preview" ? await this.db.query.users.findFirst({ where: eq(users.id, pro.userId) }) : undefined;
+    const proRating = pro && view === "customer" ? (await this.reviews.proSummaries([pro.id])).get(pro.id) : undefined;
+    const closed = b.status === "completed";
+    const invoiceNumber = closed && (view === "customer" || view === "admin") ? await this.invoices.numberFor(b.id) : null;
+    const review = closed && view === "customer" ? await this.reviews.forBooking(b.userId, b.id) : undefined;
     const addr = b.address as HomeAddressSnapshot;
     const address: HomeAddressSnapshot = view === "preview"
       ? { name: "", phone: "", line1: "", line2: addr.line2, landmark: addr.landmark, city: addr.city, pincode: addr.pincode }
@@ -502,7 +517,16 @@ export class HomeServicesService {
       paid: b.paid,
       refundedPaise: b.refundedPaise,
       ...(view === "customer" || view === "admin" ? { startCode: b.startCode } : {}),
-      pro: pro ? { name: pro.name, ...(proUser?.phone ? { phone: proUser.phone } : {}) } : null,
+      pro: pro
+        ? {
+          name: pro.name,
+          ...(proUser?.phone ? { phone: proUser.phone } : {}),
+          ...(proRating ? { rating: { average: proRating.average, count: proRating.count } } : {}),
+        }
+        : null,
+      // A completed job always has a bill; older jobs get their number on first download.
+      ...(view === "customer" || view === "admin" ? { invoiceNumber, hasInvoice: closed } : {}),
+      ...(review ? { review } : {}),
       customerNote: b.customerNote,
       canCancel: view === "customer" ? this.canCustomerCancel(b) : false,
       events: view === "preview" ? [] : events.map((e) => ({ status: e.status, note: e.note, at: e.createdAt.toISOString() })),

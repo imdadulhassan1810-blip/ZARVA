@@ -33,6 +33,7 @@ export function Header() {
         {area === "customer" && (
           <>
             {signedIn && <Link className="btn btn-ghost hide-sm" href="/home-services/bookings">Bookings</Link>}
+            <Link className="btn btn-ghost hide-sm" href="/help">Help</Link>
             {!isLogin && <Link className="btn btn-ghost" href={signedIn ? "/account" : "/login"}>{signedIn ? "Account" : "Sign in"}</Link>}
           </>
         )}

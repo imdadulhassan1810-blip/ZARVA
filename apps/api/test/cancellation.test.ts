@@ -143,6 +143,45 @@ describe("customer cancellation", () => {
     expect(rs.body.error.code).toBe("cannot_reschedule");
   });
 
+  it("can cancel at every stage before the work starts: on the way it can't move, once started it can't cancel", async () => {
+    const pro = await makePro();
+    const s = await login();
+    const b = await bookPaid(s, 12); // 3 h ahead
+    await req("POST", `${P}/pro/jobs/${b.id}/accept`, pro);
+    let cust = (await req("GET", `${P}/bookings/${b.id}`, s)).body.booking;
+    expect(cust.cancelInfo).toMatchObject({ canCancel: true, canReschedule: true });
+
+    await req("POST", `${P}/pro/jobs/${b.id}/status`, pro, { status: "on_the_way" });
+    cust = (await req("GET", `${P}/bookings/${b.id}`, s)).body.booking;
+    expect(cust.status).toBe("on_the_way");
+    expect(cust.cancelInfo).toMatchObject({ canCancel: true, canReschedule: false, cancelBlock: null, rescheduleBlock: "pro_on_the_way", quote: { refundBps: 5000 } });
+    const rs = await req("POST", `${P}/bookings/${b.id}/reschedule`, s, { slotStart: istInstant("2026-11-24", 11).toISOString() });
+    expect(rs.body.error).toMatchObject({ code: "cannot_reschedule", message: expect.stringMatching(/on the way/) });
+
+    // Inside 90 minutes the 90-minute rule still applies, at this stage too.
+    advance(91);
+    cust = (await req("GET", `${P}/bookings/${b.id}`, s)).body.booking;
+    expect(cust.cancelInfo).toMatchObject({ canCancel: false, cancelBlock: "too_late" });
+
+    await req("POST", `${P}/pro/jobs/${b.id}/status`, pro, { status: "in_progress", startCode: b.startCode });
+    cust = (await req("GET", `${P}/bookings/${b.id}`, s)).body.booking;
+    expect(cust.cancelInfo).toMatchObject({ canCancel: false, cancelBlock: "job_started" });
+    const cx = await req("POST", `${P}/bookings/${b.id}/cancel`, s, {});
+    expect(cx.body.error).toMatchObject({ code: "cannot_cancel", message: expect.stringMatching(/started the work/) });
+  });
+
+  it("cancelling while the pro is on the way refunds by the slab and tells the pro", async () => {
+    const pro = await makePro();
+    const s = await login();
+    const b = await bookPaid(s, 12);
+    await req("POST", `${P}/pro/jobs/${b.id}/accept`, pro);
+    await req("POST", `${P}/pro/jobs/${b.id}/status`, pro, { status: "on_the_way" });
+    await t.messages();
+    const c = await req("POST", `${P}/bookings/${b.id}/cancel`, s, { reason: "Not home" });
+    expect(c.body.booking).toMatchObject({ status: "cancelled", refundedPaise: 10447 + 1880 });
+    expect((await t.messages()).map((m) => m.event)).toEqual(expect.arrayContaining(["booking_cancelled", "pro_job_cancelled", "refund_started"]));
+  });
+
   it("an admin cancellation refunds everything, fee included", async () => {
     await makePro();
     const s = await login();

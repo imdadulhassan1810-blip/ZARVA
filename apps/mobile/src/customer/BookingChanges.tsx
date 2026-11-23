@@ -49,7 +49,9 @@ export function BookingChanges({ t, b, policy, onChange }: { t: Theme; b: HomeBo
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => setInfo(b.cancelInfo ?? null), [b]);
-  if (!info || !["pending_payment", "confirmed", "assigned"].includes(b.status)) return null;
+  // Shown at every open stage. When the rules don't allow a change, the button stays, switched off, with the reason.
+  if (!info || !["pending_payment", "confirmed", "assigned", "on_the_way", "in_progress"].includes(b.status)) return null;
+  const movable = ["confirmed", "assigned"].includes(b.status);
   const unpaid = b.status === "pending_payment";
 
   async function openCancel() {
@@ -100,9 +102,9 @@ export function BookingChanges({ t, b, policy, onChange }: { t: Theme; b: HomeBo
     <Card t={t} style={{ gap: 10 }}>
       <Text style={{ color: t.text, fontWeight: "800" }}>Need to change this booking?</Text>
       {!unpaid && (info.canCancel || info.canReschedule) && (
-        <Text style={{ color: t.muted, fontSize: 13 }}>Cancel or reschedule until {deadline(info.changeDeadline)}.</Text>
+        <Text style={{ color: t.muted, fontSize: 13 }}>{movable ? "Cancel or reschedule" : "Cancel"} until {deadline(info.changeDeadline)}.</Text>
       )}
-      {!unpaid && (
+      {!unpaid && movable && (
         <Button t={t} variant="outline" icon="calendar-outline" disabled={!info.canReschedule || busy}
           title={`Reschedule (free${info.reschedulesLeft > 0 ? `, ${info.reschedulesLeft} left` : ""})`} onPress={() => void openSlots()} />
       )}

@@ -59,7 +59,9 @@ export function BookingChanges({ b, policy, onChange }: { b: HomeBooking; policy
 
   useEffect(() => setInfo(b.cancelInfo ?? null), [b]);
   const ci = info;
-  if (!ci || !["pending_payment", "confirmed", "assigned"].includes(b.status)) return null;
+  // Shown at every open stage. When the rules don't allow a change, the button stays, switched off, with the reason.
+  if (!ci || !["pending_payment", "confirmed", "assigned", "on_the_way", "in_progress"].includes(b.status)) return null;
+  const movable = ["confirmed", "assigned"].includes(b.status);
 
   async function openCancel() {
     setError(null);
@@ -108,10 +110,10 @@ export function BookingChanges({ b, policy, onChange }: { b: HomeBooking; policy
     <div className="card stack" style={{ marginTop: 16 }}>
       <strong>Need to change this booking?</strong>
       {!unpaid && (ci.canCancel || ci.canReschedule) && (
-        <span className="muted" style={{ fontSize: 14 }}>You can cancel or reschedule until {deadlineText(ci.changeDeadline)}.</span>
+        <span className="muted" style={{ fontSize: 14 }}>You can cancel{movable ? " or reschedule" : ""} until {deadlineText(ci.changeDeadline)}.</span>
       )}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        {!unpaid && (
+        {!unpaid && movable && (
           <button className="btn btn-ghost" disabled={!ci.canReschedule || busy} onClick={openReschedule}>
             Reschedule (free{ci.reschedulesLeft > 0 ? `, ${ci.reschedulesLeft} left` : ""})
           </button>

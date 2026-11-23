@@ -29,7 +29,9 @@ type View = "customer" | "pro" | "preview" | "admin";
 /** Statuses that hold a slot. Unpaid online bookings hold it only for the payment window. */
 const LIVE: HomeBookingStatus[] = ["confirmed", "assigned", "on_the_way", "in_progress", "completed"];
 /** A paid booking can be cancelled or moved by the customer only before the professional sets off. */
-const CUSTOMER_CHANGEABLE: HomeBookingStatus[] = ["confirmed", "assigned"];
+/** A paid booking can be cancelled until the work starts (subject to the cut-off), and moved only before the pro sets off. */
+const CUSTOMER_CANCELLABLE: HomeBookingStatus[] = ["confirmed", "assigned", "on_the_way"];
+const CUSTOMER_MOVABLE: HomeBookingStatus[] = ["confirmed", "assigned"];
 /** A professional can drop a job they accepted until they start it. */
 const PRO_CANCELLABLE: HomeBookingStatus[] = ["assigned", "on_the_way"];
 
@@ -286,10 +288,10 @@ export class HomeServicesService {
     if (b.status === "pending_payment") {
       return { canCancel: true, canReschedule: false, cancelBlock: null, rescheduleBlock: "not_changeable", changeDeadline, quote: null, reschedulesLeft };
     }
-    const changeable = CUSTOMER_CHANGEABLE.includes(b.status);
+    const changeable = CUSTOMER_CANCELLABLE.includes(b.status);
     const tooLate = msBefore < p.customerCutoffMinutes * 60_000;
-    const cancelBlock = !changeable ? "not_changeable" : tooLate ? "too_late" : null;
-    const rescheduleBlock = cancelBlock ?? (reschedulesLeft === 0 ? "reschedule_limit" : null);
+    const cancelBlock = b.status === "in_progress" ? "job_started" : !changeable ? "not_changeable" : tooLate ? "too_late" : null;
+    const rescheduleBlock = cancelBlock ?? (!CUSTOMER_MOVABLE.includes(b.status) ? "pro_on_the_way" : reschedulesLeft === 0 ? "reschedule_limit" : null);
     const quote = changeable && b.paid ? homeRefundQuote(b, Math.floor(msBefore / 60_000), p) : null;
     return { canCancel: !cancelBlock, canReschedule: !rescheduleBlock, cancelBlock, rescheduleBlock, changeDeadline, quote, reschedulesLeft };
   }

@@ -246,6 +246,8 @@ export function BookingScreen() {
         )}
       </Card>
 
+      <BookingChanges t={t} b={b} policy={policy} onChange={setB} />
+
       <Card t={t} style={{ flexDirection: "row", gap: 12 }}>
         <Ionicons name="location-outline" size={20} color={t.muted} />
         <View style={{ flex: 1 }}>
@@ -264,7 +266,6 @@ export function BookingScreen() {
       </Card>
 
       {error && <ErrorBanner t={t} message={error} />}
-      <BookingChanges t={t} b={b} policy={policy} onChange={setB} />
       {b.cancellation && (
         <Card t={t} style={{ gap: 4 }}>
           <Text style={{ color: t.text, fontWeight: "800" }}>Refund</Text>

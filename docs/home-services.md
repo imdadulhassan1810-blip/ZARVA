@@ -50,9 +50,22 @@ It prints the username, a start password and an authenticator key. Type or scan 
 - **Job flow**: confirmed → pro accepts (or admin assigns) → on the way → pro enters the customer's 4-digit start code → in progress → completed. Before accepting, a pro sees only the area and PIN, not the customer's name, phone or house.
 - **Payment**: prepaid only. Every booking is paid online when it is made; pay after service is switched off (old cash bookings still complete normally). While Razorpay has test keys on a live server, bookings are paused. In development the mock checkout pays instantly.
 - **Customer cancel / reschedule** (defaults, editable in admin → Cancellation rules): allowed until 90 minutes before the slot, never after. Reschedule is free (2 per booking) and puts the job back in the pool for the new time. Cancel refunds the service price and its GST by notice: 24 h+ 100%, 6-24 h 75%, 3-6 h 50%, 90 min-3 h 25%. The convenience fee is never refunded. The app shows the exact refund before confirming; if it changes meanwhile the API answers `quote_changed`. If ZARVA (admin) cancels, everything is refunded.
-- **Partner cancellation**: a partner can drop an accepted job until they start it; the booking goes back to the pool and the customer is told. 2 a day are free; from the 3rd that day, 10% (4th 12.5%, 5th+ 15%) of that day's job earnings is deducted, written as a `cancellation_penalty` ledger row after the day ends (India time), so it comes off the weekly payout. At 14 in a Monday-Sunday week the app blocks further cancelling.
+- **Partner cancellation**: a partner can drop a job until they start it; auto-assign gives it straight to the next free partner (never the same one) and the customer is told. 2 a day are free; from the 3rd that day, 10% (4th 12.5%, 5th+ 15%) of that day's job earnings is deducted, written as a `cancellation_penalty` ledger row after the day ends (India time), so it comes off the weekly payout. At 14 in a Monday-Sunday week the app blocks further cancelling.
 - **Admin**: bookings by status, assign/reassign, cancel with reason, review KYC and approve / send back / suspend pros, edit prices and commission, pay pros.
 - **Messages**: SMS (and WhatsApp if the customer opted in) at confirmed, pro assigned, on the way, completed, cancelled, refund; partners get new job, job cancelled, approved, sent back, payout account changed, paid. See [notifications.md](notifications.md).
+
+## Auto-assign (from 23 Nov 2026)
+
+There is no accept step: the moment a booking is paid, ZARVA gives it to a free partner and texts them (`pro_job_assigned`).
+
+- **Free** = approved, does that category in that city, switched on ("taking new jobs"), works that IST weekday and hour (set in the partner app, default every day 8 AM to 8 PM), has no other job at that slot, and has not dropped this same booking before.
+- **Who goes first**: fewest jobs that day (spreads work), then higher rating (no rating counts as 4.0), then fewer cancellations this week, then fewer jobs in the 7 days around the slot.
+- **Slots** customers see only count partners who are on and working that hour, so a slot nobody works is not bookable.
+- **Partner drops a job, or the customer reschedules**: the next free partner gets it straight away.
+- **Nobody free**: the booking shows in admin under "Need a professional", is open in every matching partner's "Open jobs" list (first to take it gets it), and a loop retries every 15 seconds. If still nobody is assigned 120 minutes before the slot, ZARVA cancels it and refunds the customer in full, fee included.
+- Admin can always assign by hand, or press "Try auto-assign again". Admin → Pricing, cancellation & auto-assign has the on/off switch and the 120-minute setting. Off = the old manual flow (open list + admin assigns), with no automatic cancel.
+- Code: `HomeServicesService.freePros / autoAssign / dispatchTick` in `apps/api/src/modules/home/service.ts`, loop in `auto-assign.ts`, tests in `apps/api/test/auto-assign.test.ts`.
+- Not yet: travel distance (no locations stored), job length (a 3-hour job still only blocks its start slot), push notifications (partners learn by SMS, which needs DLT approval, and by the app).
 
 ## Partner sign-up and KYC
 

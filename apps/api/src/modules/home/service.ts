@@ -1,8 +1,8 @@
 import { randomInt } from "node:crypto";
-import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import {
   bookableSlotStarts, bookingCode, formatDay, formatPhone, formatRupees, formatSlot, HOME_RULES, homeChangeBlockText, homeProEarning, homeRefundQuote, homeUnitPrice,
-  homeStatusLabel, homeTotals, istDate, isSlotStart, proNextStatus,
+  homeStatusLabel, homeTotals, istDate, istInstant, isSlotStart, proNextStatus, worksSlot,
   type HomeAddressSnapshot, type HomeBooking, type HomeBookingStatus, type HomeCancelInfo, type HomeCancellation, type HomeCategory, type HomeCity,
   type HomeCreateBooking, type HomePartnerCancelStats, type HomePolicy, type HomeRefundQuote, type HomeService, type HomeSlotDay,
 } from "@zarva/core";
@@ -16,8 +16,9 @@ import type { EarningsService } from "./earnings";
 import type { PolicyService } from "./policy";
 import type { InvoiceService } from "./invoices";
 import type { ReviewService } from "./reviews";
+import { weekStart } from "./cancellations";
 import {
-  homeBookingEvents, homeBookingItems, homeBookings, homeCategories, homeCities, homePros, homeServices,
+  homeBookingEvents, homeBookingItems, homeBookings, homeCategories, homeCities, homeProCancellations, homePros, homeServices,
 } from "./schema";
 
 type BookingRow = typeof homeBookings.$inferSelect;
@@ -87,13 +88,20 @@ export class HomeServicesService {
     };
   }
 
-  /** Professionals who can take a job in this city and category. */
-  private async capacity(db: Db | Tx, cityId: string, categoryId: string): Promise<number> {
-    const [r] = await db
-      .select({ n: sql<number>`count(*)::int` })
+  /** Approved professionals in this city and category who take new jobs, with their working hours. */
+  private async workingPros(db: Db | Tx, cityId: string, categoryId: string) {
+    return db
+      .select({ id: homePros.id, workDays: homePros.workDays, workStartHour: homePros.workStartHour, workEndHour: homePros.workEndHour })
       .from(homePros)
-      .where(and(eq(homePros.cityId, cityId), eq(homePros.status, "active"), sql`${categoryId}::uuid = any(${homePros.categoryIds})`));
-    return r?.n ?? 0;
+      .where(and(
+        eq(homePros.cityId, cityId), eq(homePros.status, "active"), eq(homePros.acceptingJobs, true),
+        sql`${categoryId}::uuid = any(${homePros.categoryIds})`,
+      ));
+  }
+
+  /** Professionals who can take a job in this city and category at this slot (switched on, working that hour). */
+  private async capacity(db: Db | Tx, cityId: string, categoryId: string, slot: Date): Promise<number> {
+    return (await this.workingPros(db, cityId, categoryId)).filter((p) => worksSlot(p, slot)).length;
   }
 
   private holdsSlot() {
@@ -108,7 +116,7 @@ export class HomeServicesService {
     await this.activeCity(cityId);
     const now = this.now();
     const starts = bookableSlotStarts(now);
-    const cap = await this.capacity(this.db, cityId, categoryId);
+    const pros = await this.workingPros(this.db, cityId, categoryId);
     const used = await this.db
       .select({ slot: homeBookings.slotStart, n: sql<number>`count(*)::int` })
       .from(homeBookings)
@@ -121,7 +129,7 @@ export class HomeServicesService {
       const date = istDate(s);
       if (!days.has(date)) days.set(date, { date, label: formatDay(date, today), slots: [] });
       const iso = s.toISOString();
-      days.get(date)!.slots.push({ start: iso, label: formatSlot(iso), available: cap > (usedBy.get(s.getTime()) ?? 0) });
+      days.get(date)!.slots.push({ start: iso, label: formatSlot(iso), available: pros.filter((p) => worksSlot(p, s)).length > (usedBy.get(s.getTime()) ?? 0) });
     }
     return [...days.values()];
   }
@@ -177,7 +185,7 @@ export class HomeServicesService {
     const row = await this.db.transaction(async (tx) => {
       // Serialise bookings for the same slot so two customers can't take the last professional.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`home:${city.id}:${categoryId}:${slot.toISOString()}`}))`);
-      const cap = await this.capacity(tx, city.id, categoryId);
+      const cap = await this.capacity(tx, city.id, categoryId, slot);
       const [used] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(homeBookings)
@@ -330,7 +338,7 @@ export class HomeServicesService {
 
     await this.db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`home:${b.cityId}:${b.categoryId}:${slot.toISOString()}`}))`);
-      const cap = await this.capacity(tx, b.cityId, b.categoryId);
+      const cap = await this.capacity(tx, b.cityId, b.categoryId, slot);
       const [used] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(homeBookings)
@@ -350,6 +358,7 @@ export class HomeServicesService {
         if (pro) await this.notify.notify(tx, { event: "pro_job_cancelled", userId: pro.userId, vars: { code: bookingCode(b.id), when: shortWhen(b.slotStart) }, dedupeKey: `home:booking:${b.id}:pro-moved:${u.rescheduleCount}` });
       }
     });
+    await this.autoAssignNow(id);
     return this.load(id, "customer");
   }
 
@@ -423,12 +432,15 @@ export class HomeServicesService {
   async proJobs(userId: string): Promise<{ available: HomeBooking[]; mine: HomeBooking[] }> {
     const pro = await this.activePro(userId);
     const recent = new Date(this.now().getTime() - 6 * 3600_000);
+    // Auto-assign gives jobs out directly. Only jobs it couldn't place (nobody free) are open for anyone to take.
+    const auto = (await this.policy.get()).autoAssign;
     const open = await this.db
       .select({ id: homeBookings.id })
       .from(homeBookings)
       .where(and(
         eq(homeBookings.cityId, pro.cityId), eq(homeBookings.status, "confirmed"), isNull(homeBookings.proId),
         inArray(homeBookings.categoryId, pro.categoryIds), gt(homeBookings.slotStart, this.now()),
+        auto ? sql`${homeBookings.alertAt} is not null` : undefined,
       ))
       .orderBy(asc(homeBookings.slotStart))
       .limit(50);
@@ -458,7 +470,7 @@ export class HomeServicesService {
       await this.db.transaction(async (tx) => {
         const [u] = await tx
           .update(homeBookings)
-          .set({ proId: pro.id, status: "assigned", updatedAt: this.now() })
+          .set({ proId: pro.id, status: "assigned", alertAt: null, alertReason: null, updatedAt: this.now() })
           .where(and(
             eq(homeBookings.id, b.id), inArray(homeBookings.status, allowed),
             mustBeOpen ? isNull(homeBookings.proId) : sql`true`,
@@ -512,6 +524,8 @@ export class HomeServicesService {
       await this.event(tx, b.id, "confirmed", "pro", "Your professional can't make it. We are finding another one.");
       await this.tellCustomer(tx, b, "pro_changed", {}, `pro-changed:${pro.id}`);
     });
+    // Straight to the next free professional (never back to the one who dropped it).
+    await this.autoAssignNow(b.id);
     return this.cancellations.stats(this.db, pro.id);
   }
 
@@ -564,6 +578,153 @@ export class HomeServicesService {
     if (pro.cityId !== b.cityId || !pro.categoryIds.includes(b.categoryId)) throw badRequest("pro_mismatch", "That professional doesn't do this service in this city");
     await this.assign(b, pro, "admin", false);
     return this.load(bookingId, "admin");
+  }
+
+  async adminAlerts(): Promise<HomeBooking[]> {
+    const rows = await this.db
+      .select({ id: homeBookings.id })
+      .from(homeBookings)
+      .where(and(eq(homeBookings.status, "confirmed"), isNull(homeBookings.proId), sql`${homeBookings.alertAt} is not null`))
+      .orderBy(asc(homeBookings.slotStart))
+      .limit(100);
+    return Promise.all(rows.map((r) => this.load(r.id, "admin")));
+  }
+
+  /** Admin "try again": run auto-assign on this booking now, even if auto-assign is switched off. */
+  async adminRedispatch(bookingId: string): Promise<HomeBooking> {
+    const b = await this.db.query.homeBookings.findFirst({ where: eq(homeBookings.id, bookingId) });
+    if (!b) throw notFound("Booking");
+    if (b.status !== "confirmed" || b.proId) throw badRequest("not_unassigned", "This booking already has a professional or is closed");
+    await this.autoAssign(b, await this.policy.get(), true);
+    return this.load(bookingId, "admin");
+  }
+
+  // ---------- Auto-assign ----------
+
+  /**
+   * Free professionals for this booking, best first. Free = approved, does this category in this city,
+   * switched on for new jobs, works that day and hour, has no other job at that time, and did not drop
+   * this same booking before. Best = fewest jobs that day (work is spread out), then highest rating,
+   * then fewest cancellations this week, then fewest jobs over the 7 days around the slot.
+   */
+  async freePros(b: BookingRow): Promise<ProRow[]> {
+    const all = await this.db
+      .select()
+      .from(homePros)
+      .where(and(
+        eq(homePros.cityId, b.cityId), eq(homePros.status, "active"), eq(homePros.acceptingJobs, true),
+        sql`${b.categoryId}::uuid = any(${homePros.categoryIds})`,
+      ));
+    const working = all.filter((p) => worksSlot(p, b.slotStart));
+    if (working.length === 0) return [];
+    const ids = working.map((p) => p.id);
+    const held: HomeBookingStatus[] = ["assigned", "on_the_way", "in_progress"];
+    const done: HomeBookingStatus[] = ["assigned", "on_the_way", "in_progress", "completed"];
+    const dayStart = istInstant(istDate(b.slotStart), 0);
+    const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+    const weekFrom = new Date(b.slotStart.getTime() - 3.5 * 86_400_000);
+    const weekTo = new Date(b.slotStart.getTime() + 3.5 * 86_400_000);
+    const [busy, dropped, load, cancels, ratings] = await Promise.all([
+      this.db.select({ proId: homeBookings.proId }).from(homeBookings)
+        .where(and(inArray(homeBookings.proId, ids), eq(homeBookings.slotStart, b.slotStart), inArray(homeBookings.status, held), ne(homeBookings.id, b.id))),
+      this.db.select({ proId: homeProCancellations.proId }).from(homeProCancellations).where(eq(homeProCancellations.bookingId, b.id)),
+      this.db.select({
+        proId: homeBookings.proId,
+        day: sql<number>`count(*) filter (where ${homeBookings.slotStart} >= ${dayStart.toISOString()}::timestamptz and ${homeBookings.slotStart} < ${dayEnd.toISOString()}::timestamptz)::int`,
+        week: sql<number>`count(*)::int`,
+      }).from(homeBookings)
+        .where(and(inArray(homeBookings.proId, ids), inArray(homeBookings.status, done), gt(homeBookings.slotStart, weekFrom), lt(homeBookings.slotStart, weekTo)))
+        .groupBy(homeBookings.proId),
+      this.db.select({ proId: homeProCancellations.proId, n: sql<number>`count(*)::int` }).from(homeProCancellations)
+        .where(and(inArray(homeProCancellations.proId, ids), sql`${homeProCancellations.day} >= ${weekStart(istDate(this.now()))}`))
+        .groupBy(homeProCancellations.proId),
+      this.reviews.proSummaries(ids),
+    ]);
+    const out = new Set([...busy.map((r) => r.proId), ...dropped.map((r) => r.proId)]);
+    const loadBy = new Map(load.map((r) => [r.proId, r]));
+    const cancelBy = new Map(cancels.map((r) => [r.proId, r.n]));
+    // A new professional with no ratings yet sits in the middle, so they still get work.
+    const rating = (id: string) => ratings.get(id)?.average ?? 4;
+    return working
+      .filter((p) => !out.has(p.id))
+      .sort((x, y) =>
+        (loadBy.get(x.id)?.day ?? 0) - (loadBy.get(y.id)?.day ?? 0)
+        || rating(y.id) - rating(x.id)
+        || (cancelBy.get(x.id) ?? 0) - (cancelBy.get(y.id) ?? 0)
+        || (loadBy.get(x.id)?.week ?? 0) - (loadBy.get(y.id)?.week ?? 0)
+        || x.id.localeCompare(y.id));
+  }
+
+  /**
+   * Give a paid, unassigned booking to the best free professional. Nobody free: alert the team (and
+   * make the job open for any partner to take); still nobody close to the slot: cancel with a full
+   * refund. Returns what happened.
+   */
+  private async autoAssign(b: BookingRow, p: HomePolicy, force = false): Promise<"assigned" | "alert" | "cancelled" | "skipped"> {
+    if (b.status !== "confirmed" || b.proId) return "skipped";
+    // Switched off in admin: the team assigns by hand, nothing automatic (no alerts, no auto-cancel).
+    if (!p.autoAssign && !force) return "skipped";
+    {
+      for (const pro of await this.freePros(b)) {
+        try {
+          await this.assign(b, pro, "system", true);
+          return "assigned";
+        } catch (e) {
+          // slot_clash: they just got another job at this time, try the next one. job_taken: someone assigned it meanwhile.
+          if (e instanceof AppError && e.code === "slot_clash") continue;
+          if (e instanceof AppError && e.code === "job_taken") return "skipped";
+          throw e;
+        }
+      }
+    }
+    const minutesLeft = (b.slotStart.getTime() - this.now().getTime()) / 60_000;
+    if (minutesLeft <= p.unfulfilledCancelMinutes) {
+      try {
+        await this.cancelInternal(b, "system", "Sorry, no professional is available at your time. You get a full refund.");
+        return "cancelled";
+      } catch (e) {
+        if (e instanceof AppError && e.code === "status_changed") return "skipped";
+        throw e;
+      }
+    }
+    if (!b.alertAt) {
+      const reason = "No free professional for this slot";
+      const [u] = await this.db
+        .update(homeBookings)
+        .set({ alertAt: this.now(), alertReason: reason })
+        .where(and(eq(homeBookings.id, b.id), eq(homeBookings.status, "confirmed"), isNull(homeBookings.proId), isNull(homeBookings.alertAt)))
+        .returning({ id: homeBookings.id });
+      if (u) await this.event(this.db, b.id, "confirmed", "system", "We are finding a professional for you.");
+    }
+    return "alert";
+  }
+
+  /** Run auto-assign on one booking now (after payment, a reschedule or a professional dropping it). */
+  async autoAssignNow(bookingId: string): Promise<void> {
+    const b = await this.db.query.homeBookings.findFirst({ where: eq(homeBookings.id, bookingId) });
+    if (b) await this.autoAssign(b, await this.policy.get());
+  }
+
+  /**
+   * Every few seconds (see AutoAssigner): place every paid booking that has no professional, alert or
+   * cancel the ones nobody can do. Safe to run any number of times.
+   */
+  async dispatchTick(): Promise<{ assigned: number; alerts: number; cancelled: number }> {
+    const p = await this.policy.get();
+    const rows = await this.db
+      .select()
+      .from(homeBookings)
+      .where(and(eq(homeBookings.status, "confirmed"), isNull(homeBookings.proId), gt(homeBookings.slotStart, new Date(this.now().getTime() - 86_400_000))))
+      .orderBy(asc(homeBookings.slotStart))
+      .limit(200);
+    const out = { assigned: 0, alerts: 0, cancelled: 0 };
+    for (const b of rows) {
+      const r = await this.autoAssign(b, p);
+      if (r === "assigned") out.assigned++;
+      else if (r === "alert") out.alerts++;
+      else if (r === "cancelled") out.cancelled++;
+    }
+    return out;
   }
 
   async adminCancel(bookingId: string, reason: string): Promise<HomeBooking> {
@@ -668,6 +829,12 @@ export class HomeServicesService {
       canCancel: cancelInfo?.canCancel ?? false,
       ...(cancelInfo ? { cancelInfo } : {}),
       rescheduleCount: b.rescheduleCount,
+      ...(view === "admin" && b.status === "confirmed" && !b.proId ? {
+        dispatch: {
+          alert: b.alertReason, alertAt: b.alertAt?.toISOString() ?? null,
+          autoCancelAt: new Date(b.slotStart.getTime() - (await this.policy.get()).unfulfilledCancelMinutes * 60_000).toISOString(),
+        },
+      } : {}),
       cancellation: view === "preview" ? null : (b.cancellation as HomeCancellation | null),
       events: view === "preview" ? [] : events.map((e) => ({ status: e.status, note: e.note, at: e.createdAt.toISOString() })),
       createdAt: b.createdAt.toISOString(),

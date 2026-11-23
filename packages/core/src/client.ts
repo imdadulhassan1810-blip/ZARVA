@@ -6,7 +6,7 @@ import type {
   HomeBookingReviewState, HomeProApply, HomeProBalance, HomeProDocKind, HomeProPayoutInput, HomeProUpdate, HomeRatingSummary, HomeReview,
   HomeReviewInput, HomeService, HomeSlotDay,
 } from "./home";
-import type { HomeCancelInfo, HomePartnerCancelStats, HomePolicy, HomePolicyInput } from "./home-policy";
+import type { HomeCancelInfo, HomePartnerCancelStats, HomePolicy, HomePolicyInput, HomeProAvailability } from "./home-policy";
 import type { Feedback, FeedbackInput, SupportCreate, SupportStatus, SupportTicket } from "./support";
 
 export interface HomePaymentStart { id: string; status: string; clientPayload: Record<string, unknown> }
@@ -207,6 +207,7 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
       proApply: (p: HomeProApply) => call<{ pro: HomePro }>("POST", `${H}/pro/apply`, p),
       proJobs: () => call<{ available: HomeBooking[]; mine: HomeBooking[] }>("GET", `${H}/pro/jobs`),
       proAccept: (id: string) => call<{ booking: HomeBooking }>("POST", `${H}/pro/jobs/${id}/accept`, {}),
+      proSetAvailability: (a: HomeProAvailability) => call<{ pro: HomePro }>("PUT", `${H}/pro/me/availability`, a),
       proStatus: (id: string, status: "on_the_way" | "in_progress" | "completed", startCode?: string) =>
         call<{ booking: HomeBooking }>("POST", `${H}/pro/jobs/${id}/status`, { status, startCode }),
       proUpdate: (p: HomeProUpdate) => call<{ pro: HomePro }>("PATCH", `${H}/pro/me`, p),
@@ -221,6 +222,10 @@ export function createApiClient(baseUrl: string, store: TokenStore, fetchImpl: t
       admin: {
         bookings: (status?: HomeBookingStatus) => call<{ bookings: HomeBooking[] }>("GET", `${H}/admin/bookings${status ? `?status=${status}` : ""}`),
         assign: (id: string, proId: string) => call<{ booking: HomeBooking }>("POST", `${H}/admin/bookings/${id}/assign`, { proId }),
+        /** Bookings auto-assign couldn't place: no free professional. */
+        alerts: () => call<{ bookings: HomeBooking[] }>("GET", `${H}/admin/bookings/alerts`),
+        /** Try auto-assign again now (e.g. after a professional switched on). */
+        redispatch: (id: string) => call<{ booking: HomeBooking }>("POST", `${H}/admin/bookings/${id}/auto-assign`, {}),
         cancel: (id: string, reason: string) => call<{ booking: HomeBooking }>("POST", `${H}/admin/bookings/${id}/cancel`, { reason }),
         pros: () => call<{ pros: HomePro[] }>("GET", `${H}/admin/pros`),
         setProStatus: (id: string, status: "active" | "suspended") => call<{ pro: HomePro }>("PATCH", `${H}/admin/pros/${id}`, { status }),

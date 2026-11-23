@@ -106,6 +106,21 @@ export function AdminPolicy() {
         <button className="btn btn-ghost" disabled={p.partnerPenaltyTiers.length >= 8} onClick={() => set({ partnerPenaltyTiers: [...p.partnerPenaltyTiers, { fromCount: p.partnerFreeCancelsPerDay + 1 + p.partnerPenaltyTiers.length, penaltyBps: 1500 }] })}>+ Add a tier</button>
       </div>
 
+      <h2 style={{ marginBottom: 0 }}>Auto-assign</h2>
+      <div className="card stack">
+        <div style={{ display: "flex", flexDirection: "row", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
+          <strong style={{ flex: 1 }}>Give paid bookings to a free professional automatically (no accept step)</strong>
+          <input type="checkbox" role="switch" aria-label="Auto-assign" checked={p.autoAssign} onChange={(e) => set({ autoAssign: e.target.checked })} style={{ width: 24, height: 24, flex: "0 0 auto", margin: 0 }} />
+        </div>
+        <span className="muted" style={{ fontSize: 13 }}>
+          Free = approved, does that service, switched on, working that day and hour, and no other job at that time. Work is spread out: the one with the fewest jobs that day goes first,
+          then the higher rating, then fewer cancellations. If a professional drops a job, the next free one gets it. Off: jobs wait in the partners&apos; open list and you assign by hand.
+        </span>
+        <label>If still nobody is assigned this many minutes before the slot, cancel and refund the customer in full (fee included)
+          <input inputMode="numeric" value={p.unfulfilledCancelMinutes} onChange={(e) => set({ unfulfilledCancelMinutes: num(e.target.value) })} />
+        </label>
+      </div>
+
       {error && <p className="error" role="alert">{error}</p>}
       {saved && <p className="banner-ok">{saved}</p>}
       <div className="row">

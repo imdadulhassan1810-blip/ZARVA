@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
-  homeBookingStatuses, homeCancelSchema, homeCreateBookingSchema, homeProCancelSchema, homeRescheduleSchema, homeReviewSchema, homeDocUploadSchema, homeProApplySchema, homeProDocKinds, homeProPayoutSchema, homeProUpdateSchema,
+  homeBookingStatuses, homeCancelSchema, homeCreateBookingSchema, homeProCancelSchema, homeRescheduleSchema, homeReviewSchema, homeDocUploadSchema, homeProApplySchema, homeProDocKinds, homeProPayoutSchema, homeProUpdateSchema, homeProAvailabilitySchema,
   type HomePolicyInput,
 } from "@zarva/core";
 import { z } from "zod";
@@ -86,6 +86,9 @@ export function homeRoutes(
       const { id } = parse(idParam, req.params);
       await svc.get(req.userId!, id);
       await app.services.payments.confirmFromClient(req.userId!, parse(confirmSchema, req.body));
+      // Paid: give it to a free professional straight away (the background loop also catches webhook-only payments).
+      // A problem here must not fail the payment: the loop retries within seconds.
+      await svc.autoAssignNow(id).catch((e: Error) => req.log.error(e, "auto-assign after payment"));
       return { booking: await svc.get(req.userId!, id) };
     });
     r.get(`${prefix}/bookings/:id/review`, async (req) => reviews.forBooking(req.userId!, parse(idParam, req.params).id));
@@ -126,6 +129,7 @@ export function homeRoutes(
       return { pro: await partners.uploadDocument(req.userId!, kind, mime, dataBase64) };
     });
     r.put(`${prefix}/pro/me/payout`, async (req) => ({ pro: await partners.setPayout(req.userId!, parse(homeProPayoutSchema, req.body)) }));
+    r.put(`${prefix}/pro/me/availability`, async (req) => ({ pro: await partners.setAvailability(req.userId!, parse(homeProAvailabilitySchema, req.body)) }));
     r.post(`${prefix}/pro/me/submit`, async (req) => ({ pro: await partners.submit(req.userId!) }));
     r.get(`${prefix}/pro/earnings`, async (req) => {
       const pro = await partners.proFor(req.userId!);
@@ -162,6 +166,8 @@ export function homeRoutes(
       const { status } = parse(z.object({ status: z.enum(homeBookingStatuses).optional() }), req.query);
       return { bookings: await svc.adminBookings(status) };
     });
+    r.get(`${prefix}/admin/bookings/alerts`, async () => ({ bookings: await svc.adminAlerts() }));
+    r.post(`${prefix}/admin/bookings/:id/auto-assign`, async (req) => ({ booking: await svc.adminRedispatch(parse(idParam, req.params).id) }));
     r.post(`${prefix}/admin/bookings/:id/assign`, async (req) => {
       const { proId } = parse(z.object({ proId: z.string().uuid() }), req.body);
       return { booking: await svc.adminAssign(parse(idParam, req.params).id, proId) };

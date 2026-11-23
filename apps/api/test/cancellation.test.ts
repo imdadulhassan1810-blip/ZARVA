@@ -233,7 +233,8 @@ describe("admin cancellation rules", () => {
     const cust = await login();
     expect((await req("GET", `${P}/admin/policy`, cust)).status).toBe(403);
     const cur = (await req("GET", `${P}/admin/policy`, admin)).body.policy;
-    expect(cur).toEqual(DEFAULT_HOME_POLICY);
+    // These tests run with auto-assign off (see setupTestApp); everything else is the default.
+    expect(cur).toEqual({ ...DEFAULT_HOME_POLICY, autoAssign: false });
 
     const bad = await req("PUT", `${P}/admin/policy`, admin, { ...cur, refundSlabs: [{ minMinutesBefore: 30, refundBps: 5000 }] });
     expect(bad.body.error.code).toBe("invalid_policy");

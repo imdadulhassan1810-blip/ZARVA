@@ -89,6 +89,13 @@ export const homePros = pgTable(
     payoutUpi: text("payout_upi"),
     payoutBankAccount: text("payout_bank_account"),
     payoutIfsc: text("payout_ifsc"),
+    // Availability for auto-assign. The pro switches acceptingJobs off when on leave or full.
+    acceptingJobs: boolean("accepting_jobs").notNull().default(true),
+    /** IST weekdays they work, 0 = Sunday ... 6 = Saturday. */
+    workDays: integer("work_days").array().notNull().default(sql`'{0,1,2,3,4,5,6}'::integer[]`),
+    /** IST hours: slots starting at workStartHour up to (not including) workEndHour. */
+    workStartHour: integer("work_start_hour").notNull().default(8),
+    workEndHour: integer("work_end_hour").notNull().default(20),
     ...timestamps,
   },
   (t) => [index("home_pros_city_idx").on(t.cityId, t.status)],
@@ -144,6 +151,9 @@ export const homeBookings = pgTable(
     cancellation: jsonb("cancellation"),
     /** Free reschedules used (limit in the cancellation rules). */
     rescheduleCount: integer("reschedule_count").notNull().default(0),
+    /** Auto-assign found no free professional: the team is alerted. Cleared on assignment. */
+    alertAt: timestamp("alert_at", { withTimezone: true }),
+    alertReason: text("alert_reason"),
     idempotencyKey: text("idempotency_key").notNull(),
     ...timestamps,
   },

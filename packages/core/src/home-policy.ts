@@ -50,6 +50,16 @@ export interface HomePolicy {
   partnerMaxCancelsPerWeek: number;
   /** Penalty on the day's earnings once a partner passes the free daily cancellations. Highest matching tier wins. */
   partnerPenaltyTiers: HomePenaltyTier[];
+  /**
+   * Auto-assign. On: every paid booking is given straight to the best free professional (no accept
+   * step). If they drop it, the next free one gets it. Off: admin assigns by hand.
+   */
+  autoAssign: boolean;
+  /**
+   * If no professional is free this many minutes before the slot, ZARVA cancels the booking and
+   * refunds the customer in full (fee included). Until then the team is alerted to assign by hand.
+   */
+  unfulfilledCancelMinutes: number;
 }
 
 export const DEFAULT_HOME_POLICY: HomePolicy = {
@@ -73,6 +83,8 @@ export const DEFAULT_HOME_POLICY: HomePolicy = {
     { fromCount: 4, penaltyBps: 1_250 },
     { fromCount: 5, penaltyBps: 1_500 },
   ],
+  autoAssign: true,
+  unfulfilledCancelMinutes: 120,
 };
 
 const bps = z.number().int().min(0).max(10_000);
@@ -90,6 +102,8 @@ export const homePolicySchema = z
     partnerFreeCancelsPerDay: z.number().int().min(0).max(20),
     partnerMaxCancelsPerWeek: z.number().int().min(1).max(100),
     partnerPenaltyTiers: z.array(z.object({ fromCount: z.number().int().min(1).max(50), penaltyBps: bps })).max(8),
+    autoAssign: z.boolean().default(DEFAULT_HOME_POLICY.autoAssign),
+    unfulfilledCancelMinutes: z.number().int().min(0).max(24 * 60).default(DEFAULT_HOME_POLICY.unfulfilledCancelMinutes),
   })
   .refine((p) => p.refundSlabs.every((s) => s.minMinutesBefore >= p.customerCutoffMinutes), "Every refund slab must start at or after the cancellation cut-off")
   .refine((p) => p.partnerPenaltyTiers.every((t) => t.fromCount > p.partnerFreeCancelsPerDay), "Penalty tiers must start after the free daily cancellations")
@@ -372,3 +386,43 @@ export const homeCancelSchema = z.object({
   expectedRefundPaise: z.number().int().min(0).optional(),
 });
 export const homeProCancelSchema = z.object({ reason: z.string().trim().min(3).max(200) });
+
+/** Partner's working time, used by auto-assign. Days are IST weekdays, 0 = Sunday. Hours: slots from start up to (not incl.) end. */
+export interface HomeProAvailability {
+  acceptingJobs: boolean;
+  workDays: number[];
+  workStartHour: number;
+  workEndHour: number;
+}
+export const homeProAvailabilitySchema = z
+  .object({
+    acceptingJobs: z.boolean(),
+    workDays: z.array(z.number().int().min(0).max(6)).min(1, "Pick at least one work day").max(7).transform((d) => [...new Set(d)].sort()),
+    workStartHour: z.number().int().min(0).max(23),
+    workEndHour: z.number().int().min(1).max(24),
+  })
+  .refine((a) => a.workEndHour > a.workStartHour, "Finish time must be after start time");
+
+export const weekdayShort = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+/** "9 AM", "12 PM", "8 PM". */
+export function formatHour(h: number): string {
+  const x = h % 24;
+  return `${x % 12 === 0 ? 12 : x % 12} ${x < 12 ? "AM" : "PM"}`;
+}
+
+/** True if this professional works the slot starting at `slot` (IST weekday and hour). */
+export function worksSlot(a: Pick<HomeProAvailability, "workDays" | "workStartHour" | "workEndHour">, slot: Date): boolean {
+  const ist = new Date(slot.getTime() + 330 * 60_000);
+  const hour = ist.getUTCHours();
+  return a.workDays.includes(ist.getUTCDay()) && hour >= a.workStartHour && hour < a.workEndHour;
+}
+
+/** Admin view: auto-assign problems on a booking. */
+export interface HomeDispatchInfo {
+  /** Why the team is alerted, e.g. "No free professional for this slot". null = fine. */
+  alert: string | null;
+  alertAt: string | null;
+  /** When ZARVA will cancel and refund in full if still nobody is assigned. */
+  autoCancelAt: string | null;
+}

@@ -7,13 +7,16 @@ import { MemoryEmailSender } from "../src/auth/email-sender";
 import { createDb } from "../src/db/client";
 import { loadConfig } from "../src/lib/config";
 import { seedHomeCatalog } from "../src/modules/home/seed";
+import { homeAutoAssigners } from "../src/modules/home/auto-assign";
 
-export async function setupTestApp(env: Record<string, string> = {}, opts: { now?: () => Date; payoutProvider?: PayoutProvider } = {}) {
+/** autoAssign: older tests drive the manual flow (partner accepts from the open list), so it is off unless asked for. */
+export async function setupTestApp(env: Record<string, string> = {}, opts: { now?: () => Date; payoutProvider?: PayoutProvider; autoAssign?: boolean } = {}) {
   const url = process.env.TEST_DATABASE_URL ?? "postgres://zarva:zarva@localhost:5432/zarva_test";
   const { db, sql } = createDb(url);
   await sql`truncate feedback, support_messages, support_tickets, home_reviews, home_invoices, home_settings, home_pro_penalties, home_pro_cancellations, home_invoice_counters, notifications, home_payout_events, home_pro_ledger, home_payouts, home_pro_documents, admin_sessions, admin_accounts, home_booking_events, home_booking_items, home_bookings, home_pros, payment_events, payments, addresses, sessions, otp_challenges, users restart identity cascade`;
   await seedHomeCatalog(db);
   await sql`update home_categories set commission_bps = 2000`;
+  if (!opts.autoAssign) await sql`insert into home_settings (key, value) values ('cancellation_policy', ${JSON.stringify({ autoAssign: false })}::jsonb)`;
   const config = loadConfig({ NODE_ENV: "test", DATABASE_URL: url, JWT_SECRET: "test-secret-test-secret-test-secret-123", ...env });
   const otp = new MemoryOtpSender();
   const provider = new MockProvider();
@@ -26,6 +29,7 @@ export async function setupTestApp(env: Record<string, string> = {}, opts: { now
     notifyChannels: { sms, whatsapp }, payoutProvider: opts.payoutProvider ?? payouts,
   });
   return {
+    autoAssigner: homeAutoAssigners.get(app),
     app, db, sql, otp, mail, provider, sms, whatsapp, payouts,
     /** Send queued SMS/WhatsApp now and return what went out since the last call. */
     async messages() {

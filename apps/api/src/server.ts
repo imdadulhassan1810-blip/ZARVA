@@ -5,6 +5,7 @@ import { buildApp } from "./app";
 import { connectDb } from "./db/connect";
 import { DEV_ADMIN, loadConfig } from "./lib/config";
 import { ensureHomeSeed } from "./modules/home/seed";
+import { homeAutoAssigners } from "./modules/home/auto-assign";
 
 const config = loadConfig();
 const { db, kind } = await connectDb(config.DATABASE_URL);
@@ -40,6 +41,8 @@ if (config.devShortcuts && config.NODE_ENV === "development" && (await app.servi
 }
 // Sends queued SMS / WhatsApp updates every few seconds, and right after each change.
 app.services.notify.start();
+// Gives paid home-service bookings to free professionals, and refunds ones nobody can do.
+homeAutoAssigners.get(app)?.start();
 for (const sig of ["SIGTERM", "SIGINT"] as const) {
   process.once(sig, () => void app.close().then(() => process.exit(0)));
 }

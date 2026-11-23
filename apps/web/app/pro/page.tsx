@@ -9,6 +9,7 @@ import { isSignedIn, partnerApi as api } from "../../lib/api";
 import { areaLogin, loginUrl, signOut } from "../../lib/roles";
 import { ReviewCard, StarBars, Stars } from "../../components/Reviews";
 import { PartnerCancelBanner } from "../../components/CancellationRules";
+import { ProAvailability } from "../../components/ProAvailability";
 
 /** Service professional's screen. Built mobile-first: pros use it on their phone between jobs. */
 export default function Pro() {
@@ -108,10 +109,11 @@ export default function Pro() {
       {error && <p className="error" role="alert">{error}</p>}
       {tab === "earnings" ? <Earnings /> : tab === "profile" ? <Profile pro={pro} cats={cats} onPro={setPro} onSignOut={out} /> : <>
 
+      <div style={{ marginTop: 12 }}><ProAvailability pro={pro} onPro={setPro} compact /></div>
       {stats && <div style={{ marginTop: 12 }}><PartnerCancelBanner s={stats} /></div>}
       <h2>Your jobs</h2>
       <div className="stack">
-        {jobs.mine.length === 0 && <p className="muted">No jobs yet. Accept one below.</p>}
+        {jobs.mine.length === 0 && <p className="muted">No jobs yet. New jobs are given to you automatically while you are switched on.</p>}
         {jobs.mine.map((b) => (
           <div key={b.id} className="card stack">
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
@@ -130,7 +132,7 @@ export default function Pro() {
               <div className="card stack" style={{ borderColor: "var(--z-warning)" }}>
                 <strong>Cancel this job?</strong>
                 <span style={{ fontSize: 14 }}>
-                  It goes back to other partners. This will be cancellation {stats.today + 1} today and {stats.week + 1} this week
+                  ZARVA gives it to another free partner. This will be cancellation {stats.today + 1} today and {stats.week + 1} this week
                   (limits: {stats.freePerDay} a day free, {stats.maxPerWeek} a week).
                   {stats.nextPenaltyBps > 0 && <strong> {formatBps(stats.nextPenaltyBps)} of today's earnings will be deducted from your weekly payout.</strong>}
                 </span>
@@ -155,9 +157,9 @@ export default function Pro() {
         ))}
       </div>
 
-      <h2>New jobs near you</h2>
+      <h2>Open jobs: first to take it gets it</h2>
       <div className="stack">
-        {jobs.available.length === 0 && <p className="muted">No open jobs right now. This list refreshes every 30 seconds.</p>}
+        {jobs.available.length === 0 && <p className="muted">None right now. When ZARVA can&apos;t find a free partner for a job, it shows up here. Refreshes every 30 seconds.</p>}
         {jobs.available.map((b) => (
           <div key={b.id} className="card stack">
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -165,7 +167,7 @@ export default function Pro() {
             </div>
             <div>{itemsLine(b)}</div>
             <div className="muted">{[b.address.line2, b.address.landmark, b.address.pincode].filter(Boolean).join(", ")}</div>
-            <button className="btn" disabled={busy} onClick={() => run(() => api.home.proAccept(b.id))}>Accept job</button>
+            <button className="btn" disabled={busy} onClick={() => run(() => api.home.proAccept(b.id))}>Take this job</button>
           </div>
         ))}
       </div>
@@ -217,6 +219,8 @@ function Profile({ pro, cats, onPro, onSignOut }: { pro: HomePro; cats: HomeCate
         <div className="sum-row"><span className="muted">Area</span><span>{pro.locality ?? "Durgapur"}</span></div>
         <div className="sum-row"><span className="muted">Jobs done</span><span>{pro.jobsDone}</span></div>
       </div>
+      <h2 style={{ marginBottom: 0 }}>When you work</h2>
+      <ProAvailability pro={pro} onPro={onPro} />
       <h2 style={{ marginBottom: 0 }}>Your ratings</h2>
       <ProRatings />
       <h2 style={{ marginBottom: 0 }}>Payout account</h2>

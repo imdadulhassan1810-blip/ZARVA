@@ -3,7 +3,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   HOME_DOC_RULES, homeProDocLabel, homeProRequiredDocs,
   type HomePro, type HomeProApply, type HomeProDocKind, type HomeProDocument, type HomeProIdType, type HomeProPayoutInput,
-  type HomeProUpdate,
+  type HomeProAvailability, type HomeProUpdate,
 } from "@zarva/core";
 import type { Db } from "../../db/client";
 import { users } from "../../db/schema";
@@ -218,6 +218,17 @@ export class PartnerService {
     return out;
   }
 
+  /** On/off for new jobs, work days and hours. A pro can change these any time, also after approval. */
+  async setAvailability(userId: string, a: HomeProAvailability): Promise<HomePro> {
+    const p = await this.mine(userId);
+    const [u] = await this.db
+      .update(homePros)
+      .set({ acceptingJobs: a.acceptingJobs, workDays: a.workDays, workStartHour: a.workStartHour, workEndHour: a.workEndHour, updatedAt: this.now() })
+      .where(eq(homePros.id, p.id))
+      .returning();
+    return this.toPro(u!);
+  }
+
   async toPro(p: ProRow): Promise<HomePro> {
     const [u, done, docs] = await Promise.all([
       this.db.query.users.findFirst({ where: eq(users.id, p.userId), columns: { phone: true } }),
@@ -234,6 +245,7 @@ export class PartnerService {
         upi: p.payoutUpi, ifsc: p.payoutIfsc, accountName: p.payoutAccountName,
         bankAccountMasked: p.payoutBankAccount ? `XXXX${p.payoutBankAccount.slice(-4)}` : null,
       },
+      availability: { acceptingJobs: p.acceptingJobs, workDays: p.workDays, workStartHour: p.workStartHour, workEndHour: p.workEndHour },
       missing: p.status === "draft" || p.status === "rejected" || p.status === "pending" ? await this.missing(p, docs) : [],
     };
   }

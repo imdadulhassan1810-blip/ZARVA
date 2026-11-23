@@ -78,6 +78,13 @@
       "when": 1795333730942,
       "tag": "0010_pre_gst_pricing",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795415416449,
+      "tag": "0011_auto_assign",
+      "breakpoints": true
     }
   ]
 }

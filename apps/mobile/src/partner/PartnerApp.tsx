@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { KeyboardAvoidingView, Linking, Platform, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Linking, Platform, Pressable, RefreshControl, ScrollView, Switch, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { NavigationContainer, useFocusEffect } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { setStatusBarStyle } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import {
-  formatBps, formatPhone, formatRupees, HOME_DOC_RULES, homeLedgerLabel, homeProDocLabel, homeProIdTypeLabel, homeProIdTypes, homeProRequiredDocs,
+  formatBps, formatHour, formatPhone, formatRupees, weekdayShort, type HomeProAvailability, HOME_DOC_RULES, homeLedgerLabel, homeProDocLabel, homeProIdTypeLabel, homeProIdTypes, homeProRequiredDocs,
   type HomeBooking, type HomeCategory, type HomeEarnings, type HomePartnerCancelStats, type HomePro, type HomeProDocKind, type HomeProIdType, type HomeRatingSummary,
   type HomeReview,
 } from "@zarva/core";
@@ -122,7 +122,7 @@ const stage: Record<string, { label: string; icon: IconName }> = {
 
 /* ---------------- Jobs ---------------- */
 function JobsScreen() {
-  const { t, pro } = useP();
+  const { t, pro, setPro } = useP();
   const [jobs, setJobs] = useState<{ available: HomeBooking[]; mine: HomeBooking[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -171,16 +171,17 @@ function JobsScreen() {
           <View style={{ flexDirection: "row", gap: 10 }}>
             <Stat label="Jobs done" value={String(pro.jobsDone)} />
             <Stat label="Today & upcoming" value={jobs ? String(jobs.mine.length) : "–"} />
-            <Stat label="Open near you" value={jobs ? String(jobs.available.length) : "–"} />
+            <Stat label="Open to take" value={jobs ? String(jobs.available.length) : "–"} />
           </View>
         </InkHeader>
 
         <View style={{ padding: 16, gap: 12 }}>
           {error && <ErrorBanner t={t} message={error} onRetry={() => void load()} />}
+          <AvailabilityCard t={t} pro={pro} onPro={setPro} compact />
           {stats && <CancelStatsCard t={t} s={stats} />}
           <Text style={{ color: t.text, fontSize: 19, fontWeight: "800" }}>Your jobs</Text>
           {jobs === null ? <SkeletonCard t={t} lines={4} />
-            : jobs.mine.length === 0 ? <Card t={t}><Text style={{ color: t.muted }}>No jobs yet. Accept one below.</Text></Card>
+            : jobs.mine.length === 0 ? <Card t={t}><Text style={{ color: t.muted }}>No jobs yet. While you are switched on, ZARVA gives you jobs automatically and sends you an SMS.</Text></Card>
               : jobs.mine.map((b) => (
                 <Card key={b.id} t={t} style={{ gap: 10 }}>
                   <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
@@ -209,9 +210,9 @@ function JobsScreen() {
                 </Card>
               ))}
 
-          <Text style={{ color: t.text, fontSize: 19, fontWeight: "800", marginTop: 8 }}>New jobs near you</Text>
+          <Text style={{ color: t.text, fontSize: 19, fontWeight: "800", marginTop: 8 }}>Open jobs: first to take it gets it</Text>
           {jobs === null ? <SkeletonCard t={t} />
-            : jobs.available.length === 0 ? <EmptyState t={t} icon="briefcase-outline" title="No open jobs right now" body="Pull down to refresh. New jobs also appear here on their own." />
+            : jobs.available.length === 0 ? <EmptyState t={t} icon="briefcase-outline" title="None right now" body="Jobs ZARVA couldn't give to a free partner show up here. Pull down to refresh." />
               : jobs.available.map((b) => (
                 <Card key={b.id} t={t} style={{ gap: 8 }}>
                   <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
@@ -228,7 +229,7 @@ function JobsScreen() {
                     <Ionicons name="location-outline" size={15} color={t.muted} />
                     <Text style={{ color: t.muted, fontSize: 13, flex: 1 }}>{[b.address.line2, b.address.landmark, b.address.pincode].filter(Boolean).join(", ")}</Text>
                   </View>
-                  <Button t={t} variant="home" icon="checkmark" title="Accept job" loading={busy === b.id} disabled={busy !== null && busy !== b.id} onPress={() => void run(b.id, () => api.home.proAccept(b.id))} />
+                  <Button t={t} variant="home" icon="checkmark" title="Take this job" loading={busy === b.id} disabled={busy !== null && busy !== b.id} onPress={() => void run(b.id, () => api.home.proAccept(b.id))} />
                 </Card>
               ))}
         </View>
@@ -240,7 +241,7 @@ function JobsScreen() {
         <View style={{ padding: 20, gap: 12 }}>
           {stats && (
             <Text style={{ color: t.muted }}>
-              The job goes back to other partners. This will be cancellation {stats.today + 1} today and {stats.week + 1} this week
+              ZARVA gives the job to another free partner. This will be cancellation {stats.today + 1} today and {stats.week + 1} this week
               (limits: {stats.freePerDay} a day free, {stats.maxPerWeek} a week).
             </Text>
           )}
@@ -380,6 +381,61 @@ function EarningsScreen() {
 }
 
 /* ---------------- Profile ---------------- */
+/**
+ * On/off for new jobs, and work days and hours. ZARVA assigns jobs automatically (no accept step)
+ * to partners who are on and working that day and hour.
+ */
+function AvailabilityCard({ t, pro, onPro, compact = false }: { t: Theme; pro: HomePro; onPro: (p: HomePro) => void; compact?: boolean }) {
+  const [a, setA] = useState<HomeProAvailability>(pro.availability);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => { setA(pro.availability); }, [pro.availability]);
+  async function save(next: HomeProAvailability) {
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try { const r = await api.home.proSetAvailability(next); onPro(r.pro); haptic.success(); setSaved(true); } catch (e) { haptic.error(); setError((e as Error).message); } finally { setBusy(false); }
+  }
+  const step = (h: number, d: number, min: number, max: number) => Math.min(max, Math.max(min, h + d));
+  return (
+    <Card t={t} style={{ gap: 10 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ color: t.text, fontWeight: "800", fontSize: 16 }}>{a.acceptingJobs ? "You're on: taking new jobs" : "You're off: no new jobs"}</Text>
+          <Text style={{ color: t.muted, fontSize: 13 }}>
+            {a.acceptingJobs
+              ? `${a.workDays.length === 7 ? "Every day" : a.workDays.map((d) => weekdayShort[d]).join(", ")}, ${formatHour(a.workStartHour)} to ${formatHour(a.workEndHour)}`
+              : "Jobs you already have stay with you."}
+          </Text>
+        </View>
+        <Switch accessibilityLabel="Taking new jobs" value={a.acceptingJobs} disabled={busy} onValueChange={(v) => void save({ ...a, acceptingJobs: v })} />
+      </View>
+      {!compact && <>
+        <Text style={{ color: t.text, fontWeight: "700" }}>Days you work</Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+          {weekdayShort.map((label, d) => (
+            <Chip key={d} t={t} label={label} on={a.workDays.includes(d)} accent="home"
+              onPress={() => setA({ ...a, workDays: a.workDays.includes(d) ? a.workDays.filter((x) => x !== d) : [...a.workDays, d].sort() })} />
+          ))}
+        </View>
+        {([["From", "workStartHour", 6, 22], ["Until", "workEndHour", 7, 23]] as const).map(([label, key, min, max]) => (
+          <View key={key} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Text style={{ color: t.text, flex: 1 }}>{label}</Text>
+            <IconButton t={t} icon="remove" label={`${label} earlier`} onPress={() => setA({ ...a, [key]: step(a[key], -1, min, max) })} />
+            <Text style={{ color: t.text, fontWeight: "700", width: 56, textAlign: "center" }}>{formatHour(a[key])}</Text>
+            <IconButton t={t} icon="add" label={`${label} later`} onPress={() => setA({ ...a, [key]: step(a[key], 1, min, max) })} />
+          </View>
+        ))}
+        <Text style={{ color: t.muted, fontSize: 13 }}>You only get jobs that start inside these hours. Customers book from 8 AM to 7 PM.</Text>
+        <Button t={t} title="Save work hours" loading={busy} disabled={a.workDays.length === 0} onPress={() => void save(a)} />
+        {saved && <Text style={{ color: t.success }}>Saved.</Text>}
+      </>}
+      {error && <Text style={{ color: t.danger }}>{error}</Text>}
+    </Card>
+  );
+}
+
 function ProfileScreen() {
   const { t, pro, setPro, cats, signOut } = useP();
   const [edit, setEdit] = useState(false);
@@ -403,6 +459,7 @@ function ProfileScreen() {
         <ListRow t={t} icon="location-outline" title="Area" value={pro.locality ?? "Durgapur"} />
         <ListRow t={t} icon="trophy-outline" title="Jobs done" value={String(pro.jobsDone)} last />
       </Group>
+      <AvailabilityCard t={t} pro={pro} onPro={setPro} />
       <Group t={t}>
         <ListRow t={t} icon="star-outline" title="Your ratings"
           subtitle={ratings?.summary.count ? `${ratings.summary.average?.toFixed(1)} from ${ratings.summary.count} customer${ratings.summary.count === 1 ? "" : "s"}` : "No ratings yet. Customers rate you after each job."}

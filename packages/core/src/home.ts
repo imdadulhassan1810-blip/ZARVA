@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { HomeCancelInfo, HomeCancellation, HomePartnerCancelStats, HomePriceBreakdown } from "./home-policy";
+import type { HomeCancelInfo, HomeCancellation, HomeDispatchInfo, HomePartnerCancelStats, HomePriceBreakdown, HomeProAvailability } from "./home-policy";
 
 /**
  * Home services (vertical id "home"): shared types, pricing and slot rules.
@@ -103,6 +103,8 @@ export interface HomeBooking {
   /** Customer view: cancel / reschedule rules for this booking and the refund if cancelled now. */
   cancelInfo?: HomeCancelInfo;
   rescheduleCount: number;
+  /** Admin view: whether auto-assign needs the team to step in. */
+  dispatch?: HomeDispatchInfo;
   /** Set once cancelled: who, when, and how the refund was worked out. */
   cancellation: HomeCancellation | null;
   events: HomeBookingEvent[];
@@ -141,6 +143,8 @@ export interface HomePro {
   submittedAt: string | null;
   documents: HomeProDocument[];
   payout: HomeProPayoutInfo;
+  /** When they take jobs. Auto-assign only offers jobs inside these hours. */
+  availability: HomeProAvailability;
   /** What is still missing before the pro can submit for review. Empty = ready. */
   missing: string[];
 }

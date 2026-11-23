@@ -9,6 +9,7 @@ import { InvoiceService } from "./invoices";
 import { ReviewService } from "./reviews";
 import { PolicyService } from "./policy";
 import { CancellationService } from "./cancellations";
+import { AutoAssigner, homeAutoAssigners } from "./auto-assign";
 import { bookingCode } from "@zarva/core";
 import { and, eq } from "drizzle-orm";
 import { homeBookings, homeCategories } from "./schema";
@@ -26,6 +27,9 @@ export const homeModule: ZarvaModule<FastifyInstance> = {
     const svc = new HomeServicesService(app.db, payments, app.now, notify, earnings, invoices, reviews, policy, cancellations, { onlinePayments: app.config.onlinePayments });
     const partners = new PartnerService(app.db, vault, notify, app.now);
     app.get(`${prefix}/status`, async () => ({ module: "home", ready: true }));
+    // Places paid bookings with free professionals every 15 seconds once the server calls start().
+    homeAutoAssigners.set(app, new AutoAssigner(svc));
+    app.addHook("onClose", async () => homeAutoAssigners.get(app)?.stop());
     homeRoutes(app, prefix, { svc, partners, earnings, invoices, reviews, policy });
     // Support tickets can point at a home booking: only the customer's own, labelled for the team.
     app.services.support.registerReference("home", async (userId, referenceId) => {

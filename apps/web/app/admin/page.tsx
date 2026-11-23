@@ -30,14 +30,16 @@ export default function Admin() {
   const [adminCats, setAdminCats] = useState<HomeAdminCategory[]>([]);
   const [commission, setCommission] = useState<Record<string, string>>({});
   const [balances, setBalances] = useState<{ pros: HomeProBalance[]; payouts: HomePayout[] }>({ pros: [], payouts: [] });
+  const [alerts, setAlerts] = useState<HomeBooking[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [b, p, s, c, pay] = await Promise.all([
+    const [b, p, s, c, pay, al] = await Promise.all([
       api.home.admin.bookings(status || undefined), api.home.admin.pros(), api.home.admin.services(),
-      api.home.admin.categories(), api.home.admin.balances(),
+      api.home.admin.categories(), api.home.admin.balances(), api.home.admin.alerts(),
     ]);
     setBookings(b.bookings);
+    setAlerts(al.bookings);
     setPros(p.pros);
     setServices(s.services);
     setAdminCats(c.categories);
@@ -70,31 +72,7 @@ export default function Admin() {
   const catName = (id: string) => cats.find((c) => c.id === id)?.name ?? "";
   const activePros = pros.filter((p) => p.status === "active");
 
-  return (
-    <div style={{ marginBottom: 64 }}>
-      <h1>Home services admin</h1>
-      <div className="day-row" role="tablist">
-        {(["bookings", "support", "reviews", "feedback", "pros", "payouts", "prices", "rules", "team"] as Tab[]).map((t) => (
-          <button key={t} role="tab" aria-selected={tab === t} className={`day ${tab === t ? "day-on" : ""}`} onClick={() => setTab(t)}>
-            {t === "bookings" ? "Bookings" : t === "support" ? "Support" : t === "reviews" ? "Reviews" : t === "feedback" ? "Feedback"
-              : t === "pros" ? `Professionals${pros.some((p) => p.status === "pending") ? ` (${pros.filter((p) => p.status === "pending").length} to review)` : ""}`
-              : t === "payouts" ? `Payouts${balances.payouts.some((p) => p.status === "manual") ? " •" : ""}` : t === "prices" ? "Service prices" : t === "rules" ? "Pricing & cancellation" : "Team"}
-          </button>
-        ))}
-      </div>
-      {error && <p className="error" role="alert">{error}</p>}
-
-      {tab === "bookings" && (
-        <>
-          <label style={{ maxWidth: 280, margin: "12px 0" }}>Status
-            <select value={status} onChange={(e) => setStatus(e.target.value as HomeBookingStatus | "")}>
-              <option value="">All</option>
-              {homeBookingStatuses.map((s) => <option key={s} value={s}>{homeStatusLabel[s]}</option>)}
-            </select>
-          </label>
-          <div className="stack">
-            {bookings.length === 0 && <p className="muted">No bookings with this status.</p>}
-            {bookings.map((b) => {
+  const card = (b: HomeBooking) => {
               const fit = activePros.filter((p) => p.categoryIds.includes(b.categoryId) && p.cityId === b.cityId);
               return (
                 <div key={b.id} className="card stack">
@@ -115,6 +93,11 @@ export default function Admin() {
                     </div>
                   )}
                   {b.rescheduleCount > 0 && <div className="muted">Rescheduled {b.rescheduleCount}×</div>}
+                  {b.dispatch?.alert && (
+                    <div className="error" style={{ margin: 0 }}>
+                      ⚠ {b.dispatch.alert}. Assign someone by hand, or ZARVA cancels with a full refund at {new Date(b.dispatch.autoCancelAt!).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}.
+                    </div>
+                  )}
                   {b.pro && <div>Professional: {b.pro.name}{b.pro.phone ? ` (${formatPhone(b.pro.phone)})` : ""}</div>}
                   {b.hasInvoice && (
                     <div><button className="btn btn-ghost" onClick={() => void run(() => adminDownloadInvoice(b.id, b.invoiceNumber ?? b.code))}>⬇ Invoice{b.invoiceNumber ? ` ${b.invoiceNumber}` : ""}</button></div>
@@ -125,6 +108,9 @@ export default function Admin() {
                         <option value="">{b.pro ? "Reassign to…" : "Assign to…"}</option>
                         {fit.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.locality ?? ""}</option>)}
                       </select>
+                      {b.status === "confirmed" && !b.pro && (
+                        <button className="btn btn-ghost" onClick={() => void run(() => api.home.admin.redispatch(b.id))}>Try auto-assign again</button>
+                      )}
                       <button className="btn btn-danger" onClick={() => {
                         const reason = window.prompt("Reason for cancelling (the customer sees this). ZARVA cancelling refunds everything, fee included.");
                         if (reason && reason.trim().length >= 3) void run(() => api.home.admin.cancel(b.id, reason.trim()));
@@ -133,7 +119,40 @@ export default function Admin() {
                   )}
                 </div>
               );
-            })}
+  };
+
+  return (
+    <div style={{ marginBottom: 64 }}>
+      <h1>Home services admin</h1>
+      <div className="day-row" role="tablist">
+        {(["bookings", "support", "reviews", "feedback", "pros", "payouts", "prices", "rules", "team"] as Tab[]).map((t) => (
+          <button key={t} role="tab" aria-selected={tab === t} className={`day ${tab === t ? "day-on" : ""}`} onClick={() => setTab(t)}>
+            {t === "bookings" ? `Bookings${alerts.length ? ` (${alerts.length} need a pro)` : ""}` : t === "support" ? "Support" : t === "reviews" ? "Reviews" : t === "feedback" ? "Feedback"
+              : t === "pros" ? `Professionals${pros.some((p) => p.status === "pending") ? ` (${pros.filter((p) => p.status === "pending").length} to review)` : ""}`
+              : t === "payouts" ? `Payouts${balances.payouts.some((p) => p.status === "manual") ? " •" : ""}` : t === "prices" ? "Service prices" : t === "rules" ? "Pricing, cancellation & auto-assign" : "Team"}
+          </button>
+        ))}
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
+
+      {tab === "bookings" && (
+        <>
+          {alerts.length > 0 && (
+            <div className="stack" style={{ marginTop: 12 }}>
+              <h2 style={{ margin: 0 }}>Need a professional ({alerts.length})</h2>
+              <p className="muted" style={{ margin: 0 }}>Auto-assign found nobody free for these. They are open for any partner to take, and ZARVA keeps trying. If still nobody close to the slot, the customer is refunded in full.</p>
+              {alerts.map(card)}
+            </div>
+          )}
+          <label style={{ maxWidth: 280, margin: "12px 0" }}>Status
+            <select value={status} onChange={(e) => setStatus(e.target.value as HomeBookingStatus | "")}>
+              <option value="">All</option>
+              {homeBookingStatuses.map((s) => <option key={s} value={s}>{homeStatusLabel[s]}</option>)}
+            </select>
+          </label>
+          <div className="stack">
+            {bookings.length === 0 && <p className="muted">No bookings with this status.</p>}
+            {bookings.map(card)}
           </div>
         </>
       )}

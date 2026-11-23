@@ -299,7 +299,7 @@ export function partnerPenaltyBps(policy: HomePolicy, count: number): number {
 }
 
 /** Why a customer can't cancel / reschedule (null = they can). Shown in the app under the disabled button. */
-export type HomeChangeBlock = "too_late" | "not_changeable" | "reschedule_limit";
+export type HomeChangeBlock = "too_late" | "not_changeable" | "reschedule_limit" | "job_started" | "pro_on_the_way";
 
 /** Attached to the customer's view of a booking. */
 export interface HomeCancelInfo {
@@ -361,6 +361,8 @@ export const homeChangeBlockText: Record<HomeChangeBlock, (p: HomePolicy) => str
   too_late: (p) => `Changes close ${formatNotice(p.customerCutoffMinutes)} before your slot, because your professional is already on the way or preparing. Need help? Raise a ticket in Help.`,
   not_changeable: () => "This booking can't be changed any more.",
   reschedule_limit: (p) => `You have already rescheduled this booking ${p.maxReschedules} times, the most allowed. You can still cancel it.`,
+  job_started: () => "The professional has started the work, so this booking can't be cancelled in the app. If something is wrong, raise a ticket in Help and our team will sort it out.",
+  pro_on_the_way: () => "Your professional is already on the way, so the time can't be moved now. You can still cancel.",
 };
 
 export const homeRescheduleSchema = z.object({ slotStart: z.string().datetime({ offset: true }) });

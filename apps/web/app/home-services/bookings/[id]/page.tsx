@@ -102,6 +102,9 @@ export default function BookingDetail() {
         </div>
       )}
 
+      {/* Near the top, so the customer finds it without scrolling past the bill and timeline. */}
+      <BookingChanges b={b} policy={policy} onChange={setB} />
+
       <h2>Address</h2>
       <div className="card">
         {b.address.name}, {formatPhone(b.address.phone)}
@@ -133,7 +136,6 @@ export default function BookingDetail() {
       </ul>
 
       {error && <p className="error" role="alert">{error}</p>}
-      <BookingChanges b={b} policy={policy} onChange={setB} />
       {b.cancellation && (
         <div className="card stack" style={{ marginTop: 16 }}>
           <strong>Refund</strong>
